@@ -1,4 +1,4 @@
-import type { BankTemplateRecord, DefaultCategoryRecord, UserDataClassName } from '@shared/index';
+import type { BankTemplateRecord, DefaultCategoryRecord, MerchantDictionaryRecord, UserDataClassName } from '@shared/index';
 
 import { Parse } from './init';
 
@@ -74,10 +74,25 @@ export function syncPull(cursor: PullCursor | null, limit = 300): Promise<PullRe
 
 export interface BootstrapResult {
   changes: PullResult['changes'];
-  shared: { bankTemplates: BankTemplateRecord[]; categories: DefaultCategoryRecord[] };
+  shared: {
+    bankTemplates: BankTemplateRecord[];
+    categories: DefaultCategoryRecord[];
+    /** Absent from servers deployed before Milestone 5. */
+    merchantDictionary?: MerchantDictionaryRecord[];
+  };
   serverTime: string;
 }
 
 export function bootstrap(): Promise<BootstrapResult> {
   return Parse.Cloud.run('bootstrap');
+}
+
+export interface CategorySuggestion {
+  suggestedCategoryKey: string;
+  confidenceBps: number;
+}
+
+/** Shared merchant → category suggestion (online only). */
+export function suggestCategory(merchant: string): Promise<CategorySuggestion | null> {
+  return Parse.Cloud.run('suggestCategory', { merchant });
 }

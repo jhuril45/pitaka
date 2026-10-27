@@ -1025,10 +1025,10 @@ async function findAllOwned(query) {
 }
 
 /**
- * bootstrap() → { changes, shared: { bankTemplates, categories }, serverTime }
+ * bootstrap() → { changes, shared: { bankTemplates, categories, merchantDictionary }, serverTime }
  *
  * One call that makes a new device usable: all reference data, the last 90
- * days of transactions, all MonthlySummary rows and the shared templates.
+ * days of transactions, all MonthlySummary rows, the shared templates and the merchant dictionary.
  * The app then runs syncPull from the start to fill in everything else.
  */
 async function bootstrap(request) {
@@ -1048,12 +1048,13 @@ async function bootstrap(request) {
   }
 
   const shared = {};
-  const sharedSpecs = { bankTemplates: 'BankTemplate', categories: 'DefaultCategorySet' };
+  const sharedSpecs = { bankTemplates: 'BankTemplate', categories: 'DefaultCategorySet', merchantDictionary: 'MerchantDictionary' };
   const keys = Object.keys(sharedSpecs);
   for (let i = 0; i < keys.length; i += 1) {
     const className = sharedSpecs[keys[i]];
     const query = new Parse.Query(className);
-    query.limit(1000);
+    if (className === 'MerchantDictionary') query.descending('confidenceBps');
+    query.limit(className === 'MerchantDictionary' ? 2000 : 1000);
     const rows = await query.find(MASTER);
     shared[keys[i]] = rows.map(function (row) {
       const out = {};
@@ -1068,6 +1069,39 @@ async function bootstrap(request) {
   return { changes: changes, shared: shared, serverTime: new Date().toISOString() };
 }
 
+// ================================================================ merchants
+
+/** Same rules as the app's normalizeMerchant (src/lib/parser/normalize.ts); a test keeps them equal. */
+function normalizeMerchant(text) {
+  return String(text)
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * suggestCategory({ merchant }) → { suggestedCategoryKey, confidenceBps } | null
+ * Shared MerchantDictionary lookup, used by the app when neither the user's
+ * own corrections nor its cached copy of the dictionary know the merchant.
+ */
+async function suggestCategory(request) {
+  requireUser(request);
+  const merchant = request.params && request.params.merchant;
+  if (typeof merchant !== 'string' || merchant.length > 120) throw invalid('merchant must be text.');
+  const key = normalizeMerchant(merchant);
+  if (!key) return null;
+  const query = new Parse.Query('MerchantDictionary');
+  query.equalTo('merchantNormalized', key);
+  query.descending('confidenceBps');
+  const row = await query.first(MASTER);
+  return row ? { suggestedCategoryKey: row.get('suggestedCategoryKey'), confidenceBps: row.get('confidenceBps') || 0 } : null;
+}
+
+Parse.Cloud.define('suggestCategory', suggestCategory);
 Parse.Cloud.define('registerDevice', registerDevice);
 Parse.Cloud.define('deleteAccount', deleteAccount);
 Parse.Cloud.define('syncPush', syncPush);
@@ -1270,6 +1304,7 @@ if (typeof module !== 'undefined' && module.exports) {
     classDefinitions: classDefinitions,
     checkMoneyFields: checkMoneyFields,
     checkFileUpload: checkFileUpload,
+    normalizeMerchant: normalizeMerchant,
     toRecord: toRecord,
     applyRecord: applyRecord,
     checkRecordShape: checkRecordShape,

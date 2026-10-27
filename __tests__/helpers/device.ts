@@ -19,6 +19,8 @@ type Modules = {
   accounts: typeof import('@/data/repos/accounts');
   categories: typeof import('@/data/repos/categories');
   transactions: typeof import('@/data/repos/transactions');
+  merchantMappings: typeof import('@/data/repos/merchant-mappings');
+  sharedCache: typeof import('@/data/shared-cache');
 };
 
 export interface Device extends Modules {
@@ -94,6 +96,8 @@ export function createDevice(server: FakeServer, userId: string): Device {
       accounts: require('@/data/repos/accounts'),
       categories: require('@/data/repos/categories'),
       transactions: require('@/data/repos/transactions'),
+      merchantMappings: require('@/data/repos/merchant-mappings'),
+      sharedCache: require('@/data/shared-cache'),
     });
   });
 

@@ -27,6 +27,7 @@ export default function AppLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="quick-add" options={{ presentation: 'modal', headerShown: true, title: 'Quick add' }} />
+      <Stack.Screen name="smart-add" options={{ presentation: 'modal', headerShown: true, title: 'Smart entry' }} />
       <Stack.Screen name="transaction/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Transaction' }} />
       <Stack.Screen name="accounts/index" options={{ headerShown: true, title: 'Accounts' }} />
       <Stack.Screen name="accounts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Account' }} />

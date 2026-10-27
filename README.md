@@ -335,10 +335,59 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
   `balances.test.ts` and `repos.test.ts` (starter profile once and identical on two devices,
   starter rows never overwriting real data, transaction save/filter/edit/delete, category tree).
 
-### Where we stopped
+### Remaining for Milestone 4
+- Check it on the emulator (needs a signed-in account).
+
+---
+
+## Milestone 5: Smart text parser + merchant learning ✅ (code) · device check pending
+
+### Built
+- **Parser** (`src/lib/parser`, fully on device), `parseEntry(text, context)` → draft:
+  - **Amounts:** `250`, `30k`, `1,250.50`, `₱99`, `P500`, `PHP 1000`, `2.5k`, `1m`, `$15.99` (currency
+    reported). Digits glued to words (`7-Eleven`) are ignored. A marked amount beats a plain number.
+  - **Dates:** today/ngayon, yesterday/kahapon, kamakalawa, last week, `N days ago`, weekdays
+    (`last monday`, `lunes`), `Oct 5` / `5 Oct`, `10/5` (month/day). Dates never land in the future.
+  - **Accounts:** names and aliases (gcash, maya/paymaya, bdo, card/cc, cash/pera…), plus a
+    one-typo fuzzy match (`gcsh` → GCash). Defaults to the cash account.
+  - **Type:** transfers ("Paid credit card 5k", "gcash to bdo 1000", "transfer 500 to maya"),
+    income (received, bonus, refund…, or an income-category keyword like sweldo/sahod/salary),
+    otherwise expense.
+  - **"Received 2000 from Mark":** income with counterparty Mark, flagged `income-or-debt`, and
+    lists Mark's open debts owed to you (the repayment choice arrives with debts in Milestone 8).
+  - **Category order:**
+    1. your learned `MerchantMapping`
+    2. the cached `MerchantDictionary`
+    3. the online `suggestCategory`
+    4. keyword rules from the default categories (English + Taglish: pamasahe, kape, sweldo,
+       Meralco, load, gamot…) and your own category names
+
+    For keywords, the longest match wins, and a subcategory beats its parent.
+- **Smart entry screen** (Quick Add → Smart text): live preview as you type, example chips,
+  then "Review & save" opens the normal form prefilled. **Changing the suggested category
+  teaches it** (`learnMerchantCategory`): one `MerchantMapping` per merchant per profile (uuid
+  from profile + merchant), synced to your other devices.
+- **Cloud Code:**
+  - `suggestCategory({ merchant })` looks up the `MerchantDictionary`.
+  - `bootstrap` also returns the dictionary (top 2000 by confidence), cached on the device for
+    offline lookups.
+  - The server's `normalizeMerchant` copy is kept identical to the app's by a parity test.
+
+### Tested
+- `npm run check` passes: 13 suites, **234 tests**.
+  - `parser.test.ts`: **50 cases**, covering every spec example, dates, amounts, accounts and
+    transfers, Taglish categories, and category precedence (mapping → dictionary → keywords;
+    deleted-category mappings ignored).
+  - `merchant-learning.test.ts`: app↔cloud normalization parity, one mapping per merchant with
+    updates and no-op skips, a correction syncing to a second phone, and dictionary caching from
+    bootstrap.
+  - `integration/sync.test.ts` now also checks `suggestCategory` (runs after the redeploy).
+
+---
+
+## Where we stopped
 1. **Redeploy `cloud/main.js`** (Cloud Code → Functions & Web Hosting → Deploy). It now includes
-   `syncPush`, `syncPull` and `bootstrap`. No jobs need re-running.
-2. Run `npm run test:integration` to verify Milestone 3 against the dev app
-   (`__tests__/integration/sync.test.ts`).
-3. Check Milestone 4 on the emulator. This needs a signed-in account.
-4. Then Milestones 5–13.
+   `syncPush`, `syncPull`, `bootstrap` and `suggestCategory`. No jobs need re-running.
+2. Run `npm run test:integration` to verify Milestones 3 and 5 against the dev app.
+3. Check Milestones 4 and 5 on the emulator. This needs a signed-in account.
+4. Then Milestones 6–13.

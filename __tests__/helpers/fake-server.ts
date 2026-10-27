@@ -32,6 +32,8 @@ export function createFakeServer() {
   const users = new Map<string, Map<string, Stored>>();
   let clock = Date.parse('2026-01-01T00:00:00.000Z');
   const rejectUuids = new Set<string>();
+  /** Shared MerchantDictionary rows returned by bootstrap. */
+  const merchantDictionary: { merchantNormalized: string; suggestedCategoryKey: string; confidenceBps: number }[] = [];
   let pushCalls = 0;
   let pullCalls = 0;
 
@@ -44,6 +46,7 @@ export function createFakeServer() {
 
   return {
     rejectUuids,
+    merchantDictionary,
     get pushCalls() {
       return pushCalls;
     },
@@ -102,7 +105,7 @@ export function createFakeServer() {
       const changes = [...rowsOf(userId).values()]
         .filter((s) => s.className !== 'Transaction' || Date.parse(String(s.record.occurredAt)) >= since)
         .map((s) => ({ className: s.className, record: s.record }));
-      return { changes, shared: { bankTemplates: [], categories: [] }, serverTime: new Date(clock).toISOString() };
+      return { changes, shared: { bankTemplates: [], categories: [], merchantDictionary }, serverTime: new Date(clock).toISOString() };
     },
   };
 }

@@ -5,6 +5,7 @@ import { USER_DATA_CLASSES, type UserDataClassName } from '@shared/index';
 import { emitChange } from '@/data/events';
 import { getLocal, putManyLocal, dropLocal } from '@/data/local-store';
 import { windowStart } from '@/data/pins';
+import { saveSharedData } from '@/data/shared-cache';
 import type { AnyRecord, LocalClassName } from '@/data/records';
 import { bootstrap, syncPull, syncPush, type PullResult } from '@/parse/cloud';
 import { Parse } from '@/parse/init';
@@ -180,6 +181,7 @@ async function pullAll(userId: string): Promise<void> {
   if (!cursor) {
     // New device / reinstall: make the app usable in one call, then pull everything.
     const first = await bootstrap();
+    await saveSharedData(first.shared);
     await applyChanges(first.changes);
   }
 

@@ -54,30 +54,33 @@ interface Props {
   accounts: AccountRecord[];
   categories: CategoryRecord[];
   initial?: TransactionRecord | null;
+  /** Starting values for a new transaction (e.g. from smart text). Ignored when editing. */
+  prefill?: Partial<TransactionFormResult> | null;
   defaultType?: EditableType;
   onSubmit: (values: TransactionFormResult) => Promise<void>;
   onDelete?: () => void;
 }
 
-export function TransactionForm({ accounts, categories, initial, defaultType = 'expense', onSubmit, onDelete }: Props) {
+export function TransactionForm({ accounts, categories, initial, prefill, defaultType = 'expense', onSubmit, onDelete }: Props) {
   const { colors, spacing } = useTheme();
   const [picker, setPicker] = useState<'account' | 'toAccount' | 'category' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const currencyOf = (uuid: string | null) => accounts.find((a) => a.uuid === uuid)?.currency ?? 'PHP';
-  const initialType: EditableType = initial && initial.type !== 'adjustment' ? initial.type : defaultType;
+  const currencyOf = (uuid: string | null | undefined) => accounts.find((a) => a.uuid === uuid)?.currency ?? 'PHP';
+  const start = initial ?? prefill ?? null;
+  const startType = start?.type && start.type !== 'adjustment' ? start.type : defaultType;
 
   const { control, handleSubmit, setValue, formState } = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      type: initialType,
-      amount: initial ? toMajorString(initial.amountMinor, currencyOf(initial.accountUuid)) : '',
-      accountUuid: initial?.accountUuid ?? accounts[0]?.uuid ?? '',
-      toAccountUuid: initial?.toAccountUuid ?? null,
-      categoryUuid: initial?.categoryUuid ?? null,
-      occurredAt: initial ? new Date(initial.occurredAt) : new Date(),
-      merchant: initial?.merchant ?? '',
-      note: initial?.note ?? '',
+      type: startType,
+      amount: start?.amountMinor ? toMajorString(start.amountMinor, currencyOf(start.accountUuid)) : '',
+      accountUuid: start?.accountUuid ?? accounts[0]?.uuid ?? '',
+      toAccountUuid: start?.toAccountUuid ?? null,
+      categoryUuid: start?.categoryUuid ?? null,
+      occurredAt: start?.occurredAt ? new Date(start.occurredAt) : new Date(),
+      merchant: start?.merchant ?? '',
+      note: start?.note ?? '',
     },
   });
 
@@ -146,7 +149,7 @@ export function TransactionForm({ accounts, categories, initial, defaultType = '
             onChangeText={field.onChange}
             keyboardType="decimal-pad"
             placeholder="0.00"
-            autoFocus={!initial}
+            autoFocus={!start}
             error={fieldState.error?.message}
             style={{ fontSize: 28, fontWeight: '700', color: type === 'income' ? colors.income : type === 'expense' ? colors.expense : colors.text }}
           />

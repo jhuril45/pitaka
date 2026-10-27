@@ -211,3 +211,10 @@ describe('bootstrap', () => {
     expect(result.shared.categories.length).toBeGreaterThanOrEqual(30);
   });
 });
+
+describe('suggestCategory', () => {
+  it('returns null for an unknown merchant and validates input', async () => {
+    expect(await fn('suggestCategory', { merchant: `Unknown ${randomUUID()}` }, a.token)).toBeNull();
+    await expect(fn('suggestCategory', { merchant: 42 }, a.token)).rejects.toThrow(/merchant must be text/);
+  });
+});
