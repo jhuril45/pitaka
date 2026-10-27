@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useRef } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import type { AccountRecord, CategoryRecord, TransactionRecord } from '@shared/index';
@@ -9,6 +9,7 @@ import { MoneyText } from '@/components/money-text';
 import { AppText } from '@/components/ui/text';
 import { categoryLabel } from '@/data/repos/categories';
 import { removeTransaction } from '@/data/repos/transactions';
+import { confirm } from '@/lib/confirm';
 import { useTheme } from '@/theme';
 
 interface Props {
@@ -33,12 +34,15 @@ export function TransactionRow({ tx, accounts, categories }: Props) {
   const signed = tx.type === 'expense' ? -tx.amountMinor : tx.amountMinor;
   const edit = () => router.push({ pathname: '/transaction/[id]', params: { id: tx.uuid } });
 
-  function confirmDelete() {
+  async function confirmDelete() {
     swipe.current?.close();
-    Alert.alert('Delete transaction?', `${title} will be removed from all your devices.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void removeTransaction(tx.uuid) },
-    ]);
+    const ok = await confirm({
+      title: 'Delete transaction?',
+      message: `${title} will be removed from all your devices.`,
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (ok) await removeTransaction(tx.uuid);
   }
 
   return (

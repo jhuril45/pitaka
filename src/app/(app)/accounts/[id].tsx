@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { z } from 'zod';
 
 import { BANK_TEMPLATES, type AccountRecord, type BankTemplateRecord } from '@shared/index';
@@ -16,6 +16,7 @@ import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { listAccounts, removeAccount, saveAccount } from '@/data/repos/accounts';
 import { getRecord } from '@/data/repo';
+import { confirm } from '@/lib/confirm';
 import { parseMoney, toMajorString } from '@/lib/money';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
@@ -125,22 +126,16 @@ export default function AccountScreen() {
     router.back();
   }
 
-  function onDelete() {
-    Alert.alert(
-      'Delete account?',
-      'Its transactions stay but will no longer count toward a balance. Archiving keeps the history instead.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await removeAccount(existing!.uuid);
-            router.back();
-          },
-        },
-      ],
-    );
+  async function onDelete() {
+    const ok = await confirm({
+      title: 'Delete account?',
+      message: 'Its transactions stay but will no longer count toward a balance. Archiving keeps the history instead.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    await removeAccount(existing!.uuid);
+    router.back();
   }
 
   if (existing === undefined) return null;

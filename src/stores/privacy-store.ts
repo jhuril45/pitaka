@@ -1,5 +1,6 @@
-import Storage from 'expo-sqlite/kv-store';
 import { create } from 'zustand';
+
+import Storage from '@/lib/kv';
 
 const KEY = 'pitaka.hide-amounts';
 
@@ -10,10 +11,17 @@ interface PrivacyState {
 }
 
 export const usePrivacyStore = create<PrivacyState>((set, get) => ({
-  hideAmounts: Storage.getItemSync(KEY) === '1',
+  hideAmounts: false,
   toggleHideAmounts: () => {
     const next = !get().hideAmounts;
-    Storage.setItemSync(KEY, next ? '1' : '0');
     set({ hideAmounts: next });
+    void Storage.setItem(KEY, next ? '1' : '0');
   },
 }));
+
+// Restore the saved choice (the store is async on every platform; IndexedDB on web).
+void Storage.getItem(KEY)
+  .then((saved) => {
+    if (saved === '1') usePrivacyStore.setState({ hideAmounts: true });
+  })
+  .catch(() => undefined);

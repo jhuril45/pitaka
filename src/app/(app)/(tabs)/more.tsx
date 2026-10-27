@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
 import { syncLabel } from '@/components/sync-indicator';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { useAuth } from '@/features/auth/auth-context';
 import { deleteAccount } from '@/parse/cloud';
 import { readParseConfig } from '@/parse/config';
 import { checkLocalDatastore, type DatastoreCheckResult } from '@/parse/self-check';
+import { confirm } from '@/lib/confirm';
 import { useSyncStore } from '@/stores/sync-store';
 import { stopSync, syncNow } from '@/sync/engine';
 import { useTheme } from '@/theme';
@@ -49,39 +50,32 @@ function AccountCard() {
     if (useSyncStore.getState().pending > 0) await syncNow('logout');
     const pending = useSyncStore.getState().pending;
     if (!pending) return logoutNow();
-    Alert.alert(
-      'Changes not synced',
-      `${pending} change${pending === 1 ? '' : 's'} on this device haven’t reached the server yet and will be lost if you log out now.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log out anyway', style: 'destructive', onPress: () => void logoutNow() },
-      ],
-    );
+    const ok = await confirm({
+      title: 'Changes not synced',
+      message: `${pending} change${pending === 1 ? '' : 's'} on this device haven’t reached the server yet and will be lost if you log out now.`,
+      confirmText: 'Log out anyway',
+      destructive: true,
+    });
+    if (ok) await logoutNow();
   }
 
-  function onDelete() {
-    Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account and all of its data from every device. This can’t be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setError(null);
-            setBusy('delete');
-            try {
-              await deleteAccount();
-              await auth.logout();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : 'Could not delete the account.');
-              setBusy(null);
-            }
-          },
-        },
-      ],
-    );
+  async function onDelete() {
+    const ok = await confirm({
+      title: 'Delete account?',
+      message: 'This permanently deletes your account and all of its data from every device. This can’t be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    setError(null);
+    setBusy('delete');
+    try {
+      await deleteAccount();
+      await auth.logout();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete the account.');
+      setBusy(null);
+    }
   }
 
   if (auth.status !== 'account') return null;

@@ -1,10 +1,11 @@
-import Storage from 'expo-sqlite/kv-store';
+import Storage from '@/lib/kv';
 
 /**
- * Adapts expo-sqlite's promise-based kv-store to the callback-style AsyncStorage
- * API that the Parse React Native SDK calls (`getItem(key, cb)` etc.).
+ * Adapts the app's promise-based key-value store (SQLite kv-store on phones,
+ * IndexedDB on web — see lib/kv) to the callback-style AsyncStorage API that
+ * the Parse React Native SDK calls (`getItem(key, cb)` etc.).
  *
- * Parse's StorageController only listens to the callback, so passing the kv-store
+ * Parse's StorageController only listens to the callback, so passing the store
  * directly would leave every Local Datastore call pending forever.
  */
 

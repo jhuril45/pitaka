@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { CategoryRecord } from '@shared/index';
 
@@ -12,6 +12,7 @@ import { PickerSheet } from '@/components/ui/picker-sheet';
 import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { listCategories, removeCategory, saveCategory } from '@/data/repos/categories';
+import { confirm } from '@/lib/confirm';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
 
@@ -71,22 +72,18 @@ export default function CategoryScreen() {
     }
   }
 
-  function onDelete() {
-    Alert.alert(
-      'Delete category?',
-      hasChildren ? 'Its subcategories are deleted too. Their transactions become uncategorized.' : 'Its transactions become uncategorized.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await removeCategory(all!, existing!.uuid);
-            router.back();
-          },
-        },
-      ],
-    );
+  async function onDelete() {
+    const ok = await confirm({
+      title: 'Delete category?',
+      message: hasChildren
+        ? 'Its subcategories are deleted too. Their transactions become uncategorized.'
+        : 'Its transactions become uncategorized.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    await removeCategory(all!, existing!.uuid);
+    router.back();
   }
 
   return (

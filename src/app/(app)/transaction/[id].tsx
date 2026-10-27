@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 
 import type { TransactionRecord } from '@shared/index';
 
@@ -9,6 +9,7 @@ import { useAccounts } from '@/data/repos/accounts';
 import { useCategories } from '@/data/repos/categories';
 import { getTransaction, removeTransaction, saveTransaction } from '@/data/repos/transactions';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
+import { confirm } from '@/lib/confirm';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
 
@@ -48,18 +49,16 @@ export default function TransactionScreen() {
     router.back();
   }
 
-  function onDelete() {
-    Alert.alert('Delete transaction?', 'It will be removed from all your devices.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await removeTransaction(existing!.uuid);
-          router.back();
-        },
-      },
-    ]);
+  async function onDelete() {
+    const ok = await confirm({
+      title: 'Delete transaction?',
+      message: 'It will be removed from all your devices.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    await removeTransaction(existing!.uuid);
+    router.back();
   }
 
   return (

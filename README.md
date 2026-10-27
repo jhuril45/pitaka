@@ -20,6 +20,31 @@ npx expo run:android           # dev build on an emulator/device (native modules
 npm run check                  # typecheck + lint + tests + safety checks
 ```
 
+### Web
+
+The same app runs in a browser (Expo web, same Back4App backend):
+
+```bash
+npx expo start --web     # dev server
+npm run build:web        # static single-page app in dist/ (host anywhere; route all paths to index.html)
+```
+
+- **Storage:** `src/lib/kv` is the one key-value store for Parse and the app's bookkeeping: SQLite
+  kv-store on phones, **IndexedDB** on web (`kv.web.ts`, via idb-keyval). expo-sqlite's web build
+  needs WASM and cross-origin-isolation headers, so it isn't used there.
+- **Parse SDK:** the same React Native build runs on web. Metro maps its one React Native internal
+  import (an EventEmitter) to `src/polyfills/event-emitter.ts`, on web only.
+- **Confirm dialogs:** go through `src/lib/confirm` (native `Alert`, the browser's
+  `window.confirm` on web). react-native-web's `Alert.alert` does nothing.
+- **Background sync:** none on web, since browsers have no OS background tasks
+  (`sync/background.web.ts`). Sync still runs on start, focus, reconnect and after edits.
+- **Layout:** a phone-width column (max 480 px) centred on wide screens. Web output is a
+  single-page app (`web.output: "single"`), because a static pre-render would run storage code
+  in Node.
+- **Verified** in a headless browser: Welcome renders with no console errors, Login opens, and a
+  wrong password against the dev server shows "Incorrect email or password.". The browser logs
+  Parse's HTTP 404 for a failed login; that's how the server answers a bad password.
+
 ### Back4App setup (Cloud Code)
 
 The whole backend is one file, [`cloud/main.js`](cloud/main.js) (plain JavaScript, no build step):

@@ -1,6 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Logo } from '@/components/logo';
@@ -42,9 +42,14 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.flex}>
       <ThemeProvider value={navTheme}>
         <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
-        <AuthProvider>
-          <RootNavigator />
-        </AuthProvider>
+        {/* On a wide browser window, show the app as a phone-width column. */}
+        <View style={[styles.page, { backgroundColor: theme.scheme === 'dark' ? '#000000' : theme.colors.surfaceMuted }]}>
+          <View style={[styles.app, Platform.OS === 'web' && { borderColor: theme.colors.border }]}>
+            <AuthProvider>
+              <RootNavigator />
+            </AuthProvider>
+          </View>
+        </View>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
@@ -95,8 +100,17 @@ function StartupError({ message }: { message: string }) {
   );
 }
 
+/** Widest the app column gets on web (like a large phone). */
+const WEB_MAX_WIDTH = 480;
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  page: { flex: 1, ...(Platform.OS === 'web' ? { alignItems: 'center' } : null) },
+  app: {
+    flex: 1,
+    width: '100%',
+    ...(Platform.OS === 'web' ? { maxWidth: WEB_MAX_WIDTH, overflow: 'hidden', borderLeftWidth: 1, borderRightWidth: 1 } : null),
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   error: { flex: 1, justifyContent: 'center', padding: 24, gap: 8 },
 });

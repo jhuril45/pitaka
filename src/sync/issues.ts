@@ -1,4 +1,4 @@
-import Storage from 'expo-sqlite/kv-store';
+import Storage from '@/lib/kv';
 import { randomUUID } from 'expo-crypto';
 
 import { emitChange } from '@/data/events';
