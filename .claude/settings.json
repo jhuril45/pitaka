@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(node -v)",
+      "PowerShell(npm -v)",
+      "PowerShell(npm view expo version)",
+      "PowerShell(npm view parse version)",
+      "PowerShell(npm view expo-router version)",
+      "PowerShell(npm view zod version)",
+      "PowerShell(npm view zustand version)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ]
   }
 }

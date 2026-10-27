@@ -1,0 +1,42 @@
+import { Stack } from 'expo-router';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+
+import { Logo } from '@/components/logo';
+import { AppText } from '@/components/ui/text';
+import { useProfileSetup } from '@/data/repos/use-profile-setup';
+import { useSyncTriggers } from '@/sync/use-sync-triggers';
+import { useTheme } from '@/theme';
+
+export default function AppLayout() {
+  // Sync on start, foreground and reconnect while signed in.
+  useSyncTriggers();
+  const profileUuid = useProfileSetup();
+  const { colors } = useTheme();
+
+  if (!profileUuid) {
+    return (
+      <View style={[styles.setup, { backgroundColor: colors.background }]}>
+        <Logo size={56} />
+        <ActivityIndicator color={colors.primary} />
+        <AppText tone="muted">Setting up your wallet…</AppText>
+      </View>
+    );
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="quick-add" options={{ presentation: 'modal', headerShown: true, title: 'Quick add' }} />
+      <Stack.Screen name="transaction/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Transaction' }} />
+      <Stack.Screen name="accounts/index" options={{ headerShown: true, title: 'Accounts' }} />
+      <Stack.Screen name="accounts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Account' }} />
+      <Stack.Screen name="categories/index" options={{ headerShown: true, title: 'Categories' }} />
+      <Stack.Screen name="categories/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Category' }} />
+      <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
+    </Stack>
+  );
+}
+
+const styles = StyleSheet.create({
+  setup: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+});

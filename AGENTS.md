@@ -39,3 +39,14 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Pitaka project rules
+
+- Only two platforms: Expo app + Back4App (Parse). Never add another database, BaaS or server.
+- Money is integer minor units everywhere (`shared/money.ts`). No `parseFloat`/`toFixed` on amounts.
+- UI reads only from the Parse Local Datastore via `fromPinWithName`; writes go through the Outbox → `syncPush`.
+- Look objects up by client `uuid`, never `objectId`. Soft delete with `deletedAt`.
+- Only the Parse App ID + JavaScript Key ship in the app. The master key never leaves Back4App; third-party keys are Back4App environment variables.
+- All server code is `cloud/main.js` (plain JS, pasted into Back4App Cloud Code). Keep its class/money/seed copies in step with `/shared` (`__tests__/cloud-parity.test.ts`).
+- Shared zod schemas live in `/shared` (alias `@shared/*`); they are the reference for record shapes that `cloud/main.js` mirrors.
+- Run `npm run check` before declaring a milestone done.
