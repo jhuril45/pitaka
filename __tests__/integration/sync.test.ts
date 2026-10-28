@@ -218,3 +218,43 @@ describe('suggestCategory', () => {
     await expect(fn('suggestCategory', { merchant: 42 }, a.token)).rejects.toThrow(/merchant must be text/);
   });
 });
+
+// Milestones 8–12 (need the redeployed cloud/main.js).
+
+describe('monthly summaries and statistics', () => {
+  it('keeps MonthlySummary in step with pushed transactions', async () => {
+    const tx = expense(12345);
+    await fn('syncPush', { changes: [tx] }, a.token);
+    const month = new Date(new Date(tx.record.occurredAt).getTime() + 8 * 3600_000).toISOString().slice(0, 7);
+    const stats = await fn('getStatistics', { profileUuid: PROFILE, fromMonth: month, toMonth: month }, a.token);
+    expect(stats.totals.expenseMinor).toBeGreaterThanOrEqual(12345);
+    // Another user sees nothing of it.
+    const theirs = await fn('getStatistics', { profileUuid: PROFILE, fromMonth: month, toMonth: month }, b.token);
+    expect(theirs.totals.txCount).toBe(0);
+  });
+
+  it('validates statistics, insight and history input', async () => {
+    await expect(fn('getStatistics', { profileUuid: PROFILE, fromMonth: '2026-13', toMonth: '2026-01' }, a.token)).rejects.toThrow(/YYYY-MM/);
+    await expect(fn('markInsightRead', { uuid: randomUUID() }, a.token)).rejects.toThrow(/not found/i);
+    await expect(fn('getTransactionsPage', { profileUuid: 'x' }, a.token)).rejects.toThrow(/uuid/);
+  });
+});
+
+describe('getTransactionsPage', () => {
+  it('pages the caller’s transactions newest first', async () => {
+    const page = await fn('getTransactionsPage', { profileUuid: PROFILE, limit: 2 }, a.token);
+    expect(page.transactions.length).toBeGreaterThan(0);
+    const times = page.transactions.map((t: any) => t.occurredAt);
+    expect([...times].sort().reverse()).toEqual(times);
+    const none = await fn('getTransactionsPage', { profileUuid: PROFILE }, b.token);
+    expect(none.transactions).toEqual([]);
+  });
+});
+
+describe('getPrices', () => {
+  it('validates symbols and returns only known snapshots', async () => {
+    await expect(fn('getPrices', { symbols: [{ symbol: 'bad symbol', assetClass: 'crypto' }] }, a.token)).rejects.toThrow(/valid symbol/);
+    const result = await fn('getPrices', { symbols: [{ symbol: 'ZZZNOTHELD', assetClass: 'ph_stock' }] }, a.token);
+    expect(result.prices).toEqual([]);
+  });
+});

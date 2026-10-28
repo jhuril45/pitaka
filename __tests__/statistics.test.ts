@@ -1,5 +1,5 @@
 import { saveFeedback } from '@/lib/feedback';
-import { categoryBreakdown, lastMonths, monthlyTotals } from '@/lib/statistics';
+import { categoryBreakdown, lastMonths, monthlyTotals, summaryBreakdown } from '@/lib/statistics';
 
 const d = (y: number, m: number, day: number, h = 12) => new Date(y, m - 1, day, h);
 const meta = { profileUuid: 'p', clientUpdatedAt: '', deletedAt: null, serverUpdatedAt: null } as const;
@@ -99,7 +99,6 @@ describe('saveFeedback', () => {
 
 describe('summaryBreakdown', () => {
   it('rolls synced summaries up the same way', () => {
-    const { summaryBreakdown } = require('@/lib/statistics') as typeof import('@/lib/statistics');
     const slices = summaryBreakdown(
       [
         { month: '2025-01', categoryUuid: 'coffee', incomeMinor: 0, expenseMinor: 3000, txCount: 3 },

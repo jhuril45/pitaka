@@ -90,7 +90,6 @@ it(`handles ${COUNT.toLocaleString()} transactions`, async () => {
     phone.transactions.saveTransaction({ ...rows[0]!, uuid: undefined, amountMinor: 999 } as never),
   );
 
-  // eslint-disable-next-line no-console
   console.log(`Pitaka benchmark (${COUNT} transactions, ${month.length} this month):\n${Object.entries(results).map(([k, v]) => `  ${k.padEnd(46)} ${v}`).join('\n')}`);
   expect(all.length).toBe(COUNT);
 });
