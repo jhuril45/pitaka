@@ -1,6 +1,6 @@
 import { format, isToday } from 'date-fns';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MoneyText } from '@/components/money-text';
@@ -11,11 +11,13 @@ import { TextField } from '@/components/ui/text-field';
 import { useAccounts } from '@/data/repos/accounts';
 import { categoryLabel, useCategories } from '@/data/repos/categories';
 import { learnMerchantCategory, listMerchantMappings } from '@/data/repos/merchant-mappings';
+import { recordDebtPayment, useObligations } from '@/data/repos/obligations';
 import { saveTransaction } from '@/data/repos/transactions';
 import { useLocalQuery } from '@/data/use-local-query';
 import { useSmartParse } from '@/features/smart-entry/use-smart-parse';
 import { useVoiceInput } from '@/features/voice/use-voice-input';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
+import { debtStatus } from '@/lib/schedules';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
 
@@ -51,7 +53,17 @@ export default function SmartAddScreen() {
   const { data: accounts } = useAccounts(profileUuid);
   const { data: categories } = useCategories(profileUuid);
   const { data: mappings } = useLocalQuery(() => listMerchantMappings(profileUuid), ['MerchantMapping'], [profileUuid]);
-  const parsed = useSmartParse(text, { accounts: accounts ?? [], categories: categories ?? [], mappings: mappings ?? [] });
+  const { data: obligations } = useObligations(profileUuid);
+  const debtInfo = useMemo(
+    () => (obligations ? obligations.debts.map((debt) => ({ debt, status: debtStatus(debt, obligations.payments) })) : []),
+    [obligations],
+  );
+  const parserDebts = useMemo(
+    () => debtInfo.map(({ debt, status }) => ({ uuid: debt.uuid, counterparty: debt.counterparty, direction: debt.direction, settled: status.settled })),
+    [debtInfo],
+  );
+  const parsed = useSmartParse(text, { accounts: accounts ?? [], categories: categories ?? [], mappings: mappings ?? [], debts: parserDebts });
+  const repayment = parsed?.debtMatches[0] ? debtInfo.find((d) => d.debt.uuid === parsed.debtMatches[0]!.uuid) : undefined;
 
   if (!accounts || !categories) return null;
   const accountName = (uuid: string | null) => accounts.find((a) => a.uuid === uuid)?.name ?? '—';
@@ -70,6 +82,19 @@ export default function SmartAddScreen() {
     if (values.type !== 'transfer' && values.merchant && values.categoryUuid && values.categoryUuid !== parsed?.categoryUuid) {
       await learnMerchantCategory(profileUuid, values.merchant, values.categoryUuid);
     }
+    router.back();
+  }
+
+  /** "Received 2000 from Mark" when Mark owes you: record it against the debt (and as income). */
+  async function onRepayment() {
+    if (!repayment || !parsed?.amountMinor || !parsed.accountUuid) return;
+    await recordDebtPayment({
+      debt: repayment.debt,
+      amountMinor: parsed.amountMinor,
+      occurredAt: parsed.occurredAt.toISOString(),
+      accountUuid: parsed.accountUuid,
+      remainingBeforeMinor: repayment.status.remainingMinor,
+    });
     router.back();
   }
 
@@ -151,13 +176,22 @@ export default function SmartAddScreen() {
                 Amount is in {parsed.currency}; the account is in {currency}. Check before saving.
               </AppText>
             ) : null}
-            {parsed.confirm === 'income-or-debt' && parsed.debtMatches.length ? (
+            {repayment ? (
               <AppText variant="caption" tone="muted">
-                {parsed.counterparty} has an open debt with you. Recording it as a repayment arrives with debts (Milestone 8); for now this is
-                income.
+                {repayment.debt.counterparty} still owes you <MoneyText amountMinor={repayment.status.remainingMinor} variant="caption" tone="muted" />.
+                {parsed.amountMinor !== null && parsed.amountMinor > repayment.status.remainingMinor ? ' This is more than what’s left, so it can only be saved as income.' : ''}
               </AppText>
             ) : null}
-            <Button title="Review & save" onPress={() => setReviewing(true)} disabled={!ready} style={{ marginTop: spacing.sm }} />
+            {repayment && parsed.amountMinor !== null && parsed.amountMinor <= repayment.status.remainingMinor ? (
+              <Button title={`Repayment from ${repayment.debt.counterparty}`} onPress={() => void onRepayment()} disabled={!ready} style={{ marginTop: spacing.sm }} />
+            ) : null}
+            <Button
+              title={repayment ? 'Save as plain income' : 'Review & save'}
+              variant={repayment ? 'outline' : 'primary'}
+              onPress={() => setReviewing(true)}
+              disabled={!ready}
+              style={{ marginTop: spacing.sm }}
+            />
           </Card>
         ) : null}
 

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AccountRecord, CategoryRecord, MerchantDictionaryRecord, MerchantMappingRecord } from '@shared/index';
 
 import { loadMerchantDictionary } from '@/data/shared-cache';
-import { normalizeMerchant, parseEntry, type ParsedEntry } from '@/lib/parser';
+import { normalizeMerchant, parseEntry, type ParsedEntry, type ParserDebt } from '@/lib/parser';
 import { categoryForKey } from '@/lib/parser/categories';
 import { suggestCategory } from '@/parse/cloud';
 
@@ -20,9 +20,9 @@ export interface SmartParse extends ParsedEntry {
  */
 export function useSmartParse(
   text: string,
-  data: { accounts: AccountRecord[]; categories: CategoryRecord[]; mappings: MerchantMappingRecord[] },
+  data: { accounts: AccountRecord[]; categories: CategoryRecord[]; mappings: MerchantMappingRecord[]; debts?: ParserDebt[] },
 ): SmartParse | null {
-  const { accounts, categories, mappings } = data;
+  const { accounts, categories, mappings, debts } = data;
   const [dictionary, setDictionary] = useState<MerchantDictionaryRecord[]>([]);
   const [suggestions, setSuggestions] = useState<Record<string, string | null>>({});
 
@@ -37,9 +37,10 @@ export function useSmartParse(
       categories,
       mappings,
       dictionary,
+      debts,
       currency: accounts.find((a) => a.type === 'cash')?.currency ?? 'PHP',
     });
-  }, [text, accounts, categories, mappings, dictionary]);
+  }, [text, accounts, categories, mappings, dictionary, debts]);
 
   const merchantKey = parsed ? normalizeMerchant(parsed.merchant) : '';
   const wantsSuggestion =

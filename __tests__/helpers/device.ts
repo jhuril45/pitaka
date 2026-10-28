@@ -23,6 +23,7 @@ type Modules = {
   sharedCache: typeof import('@/data/shared-cache');
   attachments: typeof import('@/features/attachments/attachments');
   retry: typeof import('@/sync/retry');
+  obligations: typeof import('@/data/repos/obligations');
 };
 
 export interface Device extends Modules {
@@ -103,6 +104,7 @@ export function createDevice(server: FakeServer, userId: string): Device {
       sharedCache: require('@/data/shared-cache'),
       attachments: require('@/features/attachments/attachments'),
       retry: require('@/sync/retry'),
+      obligations: require('@/data/repos/obligations'),
     });
   });
 

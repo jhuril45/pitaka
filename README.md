@@ -410,9 +410,59 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
 
 ---
 
+## Milestone 6: Voice entry, receipt scanning, attachments ✅
+
+- **Voice** (`expo-speech-recognition`): Smart entry → "Say it instead"; the words go through the
+  same parser. Falls back to a message when recognition isn't available.
+- **Receipt scan** (`@react-native-ml-kit/text-recognition`, on device): reads the total, date and
+  merchant (`src/lib/ocr/receipt.ts`), then opens the normal form with the photo attached. Rows are
+  rebuilt from line positions so "AMOUNT DUE … 164.00" pairs correctly.
+- **Attachments**: photos are resized/compressed, queued, and uploaded as Parse Files before the
+  sync push (`registerBeforePush`). Optional Wi-Fi-only uploads.
+- Cloud Code accepts `{ name, url }` file references in `syncPush` (**needs the redeploy**).
+
+## Milestone 7: Budgets and goals ✅
+
+- Budgets per category (or everything), weekly/monthly/custom periods, rollover; status
+  On track / Close / Over, sub-categories roll up. Goals with contributions or a linked account,
+  and the monthly amount needed to stay on target. Home shows the two tightest budgets.
+- Sync issues screen gained **Retry** for refused rows.
+
+## Milestone 8: Debts, installments, recurring bills, reminders ✅
+
+### Built
+- **Plan tab**: Recurring, Debts and Installments sections with their own screens
+  (`recurring/[id]`, `debts/[id]`, `installments/[id]`).
+  - Recurring bill / subscription / income: weekly, monthly (day 29–31 → last day of short
+    months) or yearly; remind same day / 1 / 3 / 7 days before; optional **record automatically**.
+  - Debts (I owe / owed to me) with payments; a payment can also be recorded as a transaction,
+    and the debt is marked settled when paid off.
+  - Installments: total ÷ months split exactly (first months take the extra centavo).
+- **Auto-posting runs on the phone, offline** (`postDueItems`): on start, on return to the
+  foreground and before every sync push. Each generated transaction has a stable id from
+  (rule, day) or (installment, month), so two phones never duplicate it and a deleted one stays
+  deleted. It catches up at most 62 days.
+- **Home → "Next 7 days"**: bills, installment charges and open debts (overdue ones stay listed).
+- **Smart text**: "Received 500 from Mark" when Mark owes you offers **Repayment from Mark**.
+- **Reminders**: local notifications for the next 30 days (permission asked when you save a
+  recurring item). If a phone registers for push (needs `eas init` for a project id), the server
+  sends them instead and local ones are cancelled, so each arrives once.
+- **Cloud Code `processRecurring` job**: daily, Manila calendar days; pushes reminders through the
+  Expo Push API; `ReminderLog` (private class) prevents repeats; soft-deletes dead tokens. It
+  never creates transactions.
+
+### Tested
+- `schedules.test.ts` (occurrences, month-end, installments, debts, auto-post with stable ids on two
+  devices, Home's due list) and `cloud-reminders.test.ts` (Manila day math, reminder text, the job
+  sending once when run twice).
+- Emulator: added a subscription (permission prompt, alarms scheduled), a debt, a smart-text
+  repayment (₱2,000 → ₱1,500 left), an installment whose first charge was recorded automatically;
+  everything synced.
+
+---
+
 ## Where we stopped
-1. **Redeploy `cloud/main.js`** (Cloud Code → Functions & Web Hosting → Deploy). It now includes
-   `syncPush`, `syncPull`, `bootstrap` and `suggestCategory`. No jobs need re-running.
-2. Run `npm run test:integration` to verify Milestones 3 and 5 against the dev app.
-3. Check Milestones 4 and 5 on the emulator. This needs a signed-in account.
-4. Then Milestones 6–13.
+1. **Redeploy `cloud/main.js`** (Cloud Code → Deploy), then run **setupSchema** once (adds
+   `ReminderLog`). Schedule **processRecurring** daily at 01:00 UTC. After the redeploy, use
+   More → Sync issues → Retry for any refused receipt photo.
+2. Run `npm run test:integration` against the dev app.

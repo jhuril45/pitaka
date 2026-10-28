@@ -6,6 +6,7 @@ import { AppText } from '@/components/ui/text';
 import { useProfileSetup } from '@/data/repos/use-profile-setup';
 // Registers the receipt uploader with the sync engine.
 import '@/features/attachments/attachments';
+import { useChores } from '@/features/reminders/use-chores';
 import { useSyncTriggers } from '@/sync/use-sync-triggers';
 import { useTheme } from '@/theme';
 
@@ -13,17 +14,27 @@ export default function AppLayout() {
   // Sync on start, foreground and reconnect while signed in.
   useSyncTriggers();
   const profileUuid = useProfileSetup();
-  const { colors } = useTheme();
 
   if (!profileUuid) {
-    return (
-      <View style={[styles.setup, { backgroundColor: colors.background }]}>
-        <Logo size={56} />
-        <ActivityIndicator color={colors.primary} />
-        <AppText tone="muted">Setting up your wallet…</AppText>
-      </View>
-    );
+    return <SetupScreen />;
   }
+  return <SignedInStack profileUuid={profileUuid} />;
+}
+
+function SetupScreen() {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.setup, { backgroundColor: colors.background }]}>
+      <Logo size={56} />
+      <ActivityIndicator color={colors.primary} />
+      <AppText tone="muted">Setting up your wallet…</AppText>
+    </View>
+  );
+}
+
+function SignedInStack({ profileUuid }: { profileUuid: string }) {
+  // Post due bills/installments and keep reminders current.
+  useChores(profileUuid);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -38,6 +49,9 @@ export default function AppLayout() {
       <Stack.Screen name="categories/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Category' }} />
       <Stack.Screen name="budgets/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Budget' }} />
       <Stack.Screen name="goals/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Goal' }} />
+      <Stack.Screen name="debts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Debt' }} />
+      <Stack.Screen name="installments/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Installment' }} />
+      <Stack.Screen name="recurring/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Recurring' }} />
       <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
     </Stack>
   );

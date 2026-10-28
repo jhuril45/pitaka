@@ -44,7 +44,7 @@ describe('registration', () => {
       expect(beforeDelete[name]).toBeInstanceOf(Function);
     }
     expect(Object.keys(functions).sort()).toEqual(['bootstrap', 'deleteAccount', 'registerDevice', 'suggestCategory', 'syncPull', 'syncPush']);
-    expect(Object.keys(jobs).sort()).toEqual(['cleanupInvalidRows', 'seedShared', 'setupSchema']);
+    expect(Object.keys(jobs).sort()).toEqual(['cleanupInvalidRows', 'processRecurring', 'seedShared', 'setupSchema']);
     expect(beforeSaveFile).toBeInstanceOf(Function);
   });
 });

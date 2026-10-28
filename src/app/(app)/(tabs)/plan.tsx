@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -10,11 +11,13 @@ import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
+import { useObligations } from '@/data/repos/obligations';
 import { useBudgets, useGoals } from '@/data/repos/plans';
 import { useProfile } from '@/data/repos/profiles';
 import { useAccountBalances } from '@/data/repos/use-balances';
 import { BudgetCard } from '@/features/plans/budget-card';
 import { budgetStatus, goalStatus } from '@/lib/budgets';
+import { debtStatus, installmentStatus, nextOccurrence } from '@/lib/schedules';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
 
@@ -27,6 +30,7 @@ export default function PlanScreen() {
   const { data: goalData } = useGoals(profileUuid);
   const { data: categories } = useCategories(profileUuid);
   const { transactions, balances } = useAccountBalances(profileUuid);
+  const { data: obligations } = useObligations(profileUuid);
 
   const budgetRows = useMemo(
     () =>
@@ -88,14 +92,72 @@ export default function PlanScreen() {
         );
       })}
 
+      <Section title="Recurring" addLabel="Add recurring bill or income" onAdd={() => router.push({ pathname: '/recurring/[id]', params: { id: 'new' } })} />
+      <Card>
+        {obligations?.rules.length === 0 ? <AppText tone="muted">Bills, subscriptions and salary: get reminded, and record them automatically.</AppText> : null}
+        {obligations?.rules.map((rule) => {
+          const next = nextOccurrence(rule);
+          return (
+            <ListRow
+              key={rule.uuid}
+              title={rule.name}
+              subtitle={next ? `${rule.frequency === 'monthly' ? 'Monthly' : rule.frequency === 'weekly' ? 'Weekly' : rule.frequency === 'yearly' ? 'Yearly' : 'Daily'} · next ${format(next, 'MMM d')}` : 'Ended'}
+              onPress={() => router.push({ pathname: '/recurring/[id]', params: { id: rule.uuid } })}
+              right={<MoneyText amountMinor={rule.template.amountMinor} currency={currency} tone={rule.kind === 'income' ? 'income' : 'default'} />}
+            />
+          );
+        })}
+      </Card>
+
+      <Section title="Debts" addLabel="Add debt" onAdd={() => router.push({ pathname: '/debts/[id]', params: { id: 'new' } })} />
+      <Card>
+        {obligations?.debts.length === 0 ? <AppText tone="muted">Keep track of money you owe or lent, and record payments as they come.</AppText> : null}
+        {obligations?.debts.map((debt) => {
+          const s = debtStatus(debt, obligations.payments);
+          return (
+            <ListRow
+              key={debt.uuid}
+              title={debt.direction === 'i_owe' ? `You owe ${debt.counterparty}` : `${debt.counterparty} owes you`}
+              subtitle={s.settled ? 'Settled' : s.overdue ? 'Overdue' : debt.dueDate ? `Due ${format(new Date(debt.dueDate), 'MMM d')}` : undefined}
+              onPress={() => router.push({ pathname: '/debts/[id]', params: { id: debt.uuid } })}
+              right={<MoneyText amountMinor={s.remainingMinor} currency={currency} tone={s.overdue ? 'expense' : s.settled ? 'income' : 'default'} />}
+            />
+          );
+        })}
+      </Card>
+
+      <Section title="Installments" addLabel="Add installment" onAdd={() => router.push({ pathname: '/installments/[id]', params: { id: 'new' } })} />
+      <Card>
+        {obligations?.installments.length === 0 ? <AppText tone="muted">Bought something on monthly terms? Track what’s left and get the charges recorded.</AppText> : null}
+        {obligations?.installments.map((inst) => {
+          const s = installmentStatus(inst);
+          return (
+            <ListRow
+              key={inst.uuid}
+              title={inst.name}
+              subtitle={s.done ? 'Fully paid' : `${s.paidMonths}/${inst.months} paid${s.next ? ` · next ${format(s.next.date, 'MMM d')}` : ''}`}
+              onPress={() => router.push({ pathname: '/installments/[id]', params: { id: inst.uuid } })}
+              right={<MoneyText amountMinor={s.remainingMinor} currency={currency} tone={s.done ? 'income' : 'default'} />}
+            />
+          );
+        })}
+      </Card>
+
       <Card style={{ marginTop: spacing.md }}>
         <AppText variant="heading">More planning</AppText>
-        <ListRow title="Debts" subtitle="Coming in Milestone 8" />
-        <ListRow title="Installments" subtitle="Coming in Milestone 8" />
-        <ListRow title="Recurring bills" subtitle="Coming in Milestone 8" />
         <ListRow title="Cashflow forecast" subtitle="Coming in Milestone 9" />
       </Card>
     </Screen>
+  );
+}
+
+function Section({ title, addLabel, onAdd }: { title: string; addLabel: string; onAdd: () => void }) {
+  const { spacing } = useTheme();
+  return (
+    <View style={[styles.between, { marginTop: spacing.md }]}>
+      <AppText variant="heading">{title}</AppText>
+      <Button title="Add" variant="ghost" accessibilityLabel={addLabel} onPress={onAdd} style={styles.inline} />
+    </View>
   );
 }
 

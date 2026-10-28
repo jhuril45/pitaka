@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { format, isPast, isToday, isTomorrow } from 'date-fns';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -12,18 +12,22 @@ import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
+import { useObligations } from '@/data/repos/obligations';
 import { useBudgets } from '@/data/repos/plans';
 import { listProfiles } from '@/data/repos/profiles';
 import { useAccountBalances } from '@/data/repos/use-balances';
 import { useLocalQuery } from '@/data/use-local-query';
 import { useAuth } from '@/features/auth/auth-context';
 import { BudgetCard } from '@/features/plans/budget-card';
+import { dueSoon } from '@/features/reminders/upcoming';
 import { TransactionRow } from '@/features/transactions/transaction-row';
 import { budgetStatus } from '@/lib/budgets';
 import { netWorth, periodTotals } from '@/lib/balances';
 import { usePrivacyStore } from '@/stores/privacy-store';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
+
+const dayLabel = (d: Date) => (isToday(d) ? 'Today' : isTomorrow(d) ? 'Tomorrow' : isPast(d) ? `Overdue · ${format(d, 'MMM d')}` : format(d, 'EEE, MMM d'));
 
 export default function HomeScreen() {
   const profileUuid = useCurrentProfileUuid();
@@ -54,6 +58,8 @@ export default function HomeScreen() {
         : [],
     [budgets, transactions, categories],
   );
+  const { data: obligations } = useObligations(profileUuid);
+  const upcoming = useMemo(() => (obligations ? dueSoon(obligations) : []), [obligations]);
 
   return (
     <Screen title={firstName ? `Hi, ${firstName}` : 'Home'}>
@@ -104,6 +110,21 @@ export default function HomeScreen() {
           </View>
         </View>
       </Card>
+
+      {upcoming.length ? (
+        <Card>
+          <AppText variant="heading">Next 7 days</AppText>
+          {upcoming.slice(0, 5).map((item) => (
+            <ListRow
+              key={item.key}
+              title={item.title}
+              subtitle={dayLabel(item.date)}
+              onPress={() => router.push({ pathname: item.pathname, params: { id: item.id } })}
+              right={<MoneyText amountMinor={item.amountMinor} currency={baseCurrency} tone={item.incoming ? 'income' : 'default'} />}
+            />
+          ))}
+        </Card>
+      ) : null}
 
       {categories
         ? topBudgets.map(({ budget, status }) => (

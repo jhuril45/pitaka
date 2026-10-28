@@ -14,6 +14,11 @@
  *   3. cleanupInvalidRows (once, optional) deletes rows written before the
  *                   permissions existed: owner-scoped rows with no owner and
  *                   shared rows missing required fields.
+ *   4. processRecurring: schedule it daily at 01:00 UTC (09:00 Manila). It
+ *                   pushes bill, installment and debt reminders to phones that
+ *                   registered for push. It never creates transactions (the
+ *                   app records due items itself, offline). Set the env var
+ *                   EXPO_ACCESS_TOKEN only if Expo push security is enabled.
  *
  * Security model
  *   - User-data classes: clients may only READ their own rows (pointer
@@ -218,6 +223,8 @@ const SHARED_PUBLIC_FIELDS = {
 /** Server-only bookkeeping; no client access at all. */
 const PRIVATE_FIELDS = {
   TrackedSymbol: { symbol: 'String', assetClass: 'String', refCount: 'Number', lastFetchedAt: 'Date' },
+  /** One row per push reminder sent, so a re-run of processRecurring never repeats one. */
+  ReminderLog: { key: 'String', sentAt: 'Date' },
 };
 
 const SERVER_OWNED_CLASSES = Object.keys(SERVER_OWNED_FIELDS);
@@ -273,6 +280,7 @@ const OWNER_INDEXES = {
 const EXTRA_INDEXES = {
   Transaction: { owner_profile_occurredAt: { _p_owner: 1, profileUuid: 1, occurredAt: -1 } },
   DeviceToken: { expoPushToken: { expoPushToken: 1 } },
+  ReminderLog: { key: { key: 1 } },
   MonthlySummary: { owner_profile_month: { _p_owner: 1, profileUuid: 1, month: 1 } },
   PriceSnapshot: { symbol_capturedOn: { symbol: 1, capturedOn: -1 } },
   TrackedSymbol: { symbol_assetClass: { symbol: 1, assetClass: 1 } },
@@ -1301,6 +1309,260 @@ Parse.Cloud.job('cleanupInvalidRows', async function (request) {
   return summary;
 });
 
+// ================================================================ reminders (processRecurring)
+
+/** Reminders use Philippine calendar days (UTC+8, no daylight saving). */
+const MANILA_OFFSET_MS = 8 * 3600 * 1000;
+const DAY_MS = 86400000;
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const PUSH_BATCH = 100;
+
+/** The Manila calendar day of an instant, as a UTC-midnight Date. */
+function manilaDay(value) {
+  const t = new Date(value).getTime() + MANILA_OFFSET_MS;
+  return new Date(Math.floor(t / DAY_MS) * DAY_MS);
+}
+
+function dayKeyOf(day) {
+  return day.toISOString().slice(0, 10);
+}
+
+function addDaysUtc(day, n) {
+  return new Date(day.getTime() + n * DAY_MS);
+}
+
+function daysInMonthUtc(year, month) {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+/** `months` later on `dayOfMonth`; days 29–31 fall on the last day of short months. */
+function addMonthsUtc(day, months, dayOfMonth) {
+  const m = day.getUTCMonth() + months;
+  const year = day.getUTCFullYear() + Math.floor(m / 12);
+  const month = ((m % 12) + 12) % 12;
+  return new Date(Date.UTC(year, month, Math.min(dayOfMonth, daysInMonthUtc(year, month))));
+}
+
+/** The n-th occurrence of a rule (mirrors occurrence() in src/lib/schedules.ts). */
+function ruleOccurrence(rule, n) {
+  const first = manilaDay(rule.nextRunAt);
+  const step = Math.max(1, rule.interval || 1) * n;
+  switch (rule.frequency) {
+    case 'daily':
+      return addDaysUtc(first, step);
+    case 'weekly':
+      return addDaysUtc(first, 7 * step);
+    case 'yearly':
+      return addMonthsUtc(first, 12 * step, first.getUTCDate());
+    default:
+      return addMonthsUtc(first, step, rule.byMonthDay || first.getUTCDate());
+  }
+}
+
+function ruleFallsOn(rule, day) {
+  const end = rule.endAt ? manilaDay(rule.endAt) : null;
+  for (let n = 0; n < 5000; n += 1) {
+    const d = ruleOccurrence(rule, n);
+    if ((end && d > end) || d > day) return false;
+    if (d.getTime() === day.getTime()) return true;
+  }
+  return false;
+}
+
+/** Split a total over `parts` months exactly; the first months take the extra centavos. */
+function splitMinor(total, parts) {
+  const base = Math.floor(total / parts);
+  const extra = total - base * parts;
+  const out = [];
+  for (let i = 0; i < parts; i += 1) out.push(base + (i < extra ? 1 : 0));
+  return out;
+}
+
+function pesos(minor) {
+  const abs = Math.abs(minor);
+  const whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (minor < 0 ? '-' : '') + '₱' + whole + '.' + String(abs % 100).padStart(2, '0');
+}
+
+/**
+ * Reminders due today (Manila) for one user's records (plain JSON). Mirrors
+ * the app's local reminders: a rule `remindDaysBefore` days ahead,
+ * installments and debts the day before. Keys are stable for de-duplication.
+ */
+function remindersFor(data, now) {
+  const today = manilaDay(now);
+  const tomorrow = addDaysUtc(today, 1);
+  const out = [];
+  data.rules.forEach(function (rule) {
+    const before = rule.remindDaysBefore || 0;
+    const due = addDaysUtc(today, before);
+    if (!ruleFallsOn(rule, due)) return;
+    const when = before === 0 ? 'today' : before === 1 ? 'tomorrow' : 'in ' + before + ' days';
+    out.push({
+      key: rule.uuid + ':' + dayKeyOf(due),
+      title: rule.kind === 'income' ? 'Money coming in' : 'Bill reminder',
+      body: rule.name + ' (' + pesos(rule.template.amountMinor) + ') ' + (rule.kind === 'income' ? 'expected ' : 'is due ') + when + '.',
+    });
+  });
+  data.installments.forEach(function (inst) {
+    const start = manilaDay(inst.startDate);
+    const amounts = splitMinor(inst.totalMinor, inst.months);
+    for (let i = 0; i < inst.months; i += 1) {
+      if (addMonthsUtc(start, i, start.getUTCDate()).getTime() !== tomorrow.getTime()) continue;
+      out.push({
+        key: inst.uuid + ':' + dayKeyOf(tomorrow),
+        title: 'Installment tomorrow',
+        body: inst.name + ': ' + pesos(amounts[i]) + ' (' + (i + 1) + ' of ' + inst.months + ').',
+      });
+    }
+  });
+  data.debts.forEach(function (debt) {
+    if (!debt.dueDate || debt.settledAt) return;
+    if (manilaDay(debt.dueDate).getTime() !== tomorrow.getTime()) return;
+    const paid = data.payments.reduce(function (sum, p) {
+      return p.debtUuid === debt.uuid ? sum + p.amountMinor : sum;
+    }, 0);
+    const left = debt.principalMinor - paid;
+    if (left <= 0) return;
+    out.push({
+      key: debt.uuid + ':' + dayKeyOf(tomorrow),
+      title: 'Debt due',
+      body:
+        debt.direction === 'i_owe'
+          ? 'You owe ' + debt.counterparty + ' ' + pesos(left) + ', due tomorrow.'
+          : debt.counterparty + ' owes you ' + pesos(left) + ', due tomorrow.',
+    });
+  });
+  return out;
+}
+
+/** Every live row of a class, as plain JSON (dates as ISO strings). */
+async function findAll(className, configure) {
+  const rows = [];
+  for (let skip = 0; ; skip += PAGE) {
+    const query = new Parse.Query(className);
+    configure(query);
+    query.equalTo('deletedAt', null);
+    query.ascending('objectId');
+    query.skip(skip);
+    query.limit(PAGE);
+    const page = await query.find(MASTER);
+    rows.push.apply(rows, page);
+    if (page.length < PAGE) return rows;
+  }
+}
+
+function plain(objects) {
+  return objects.map(function (o) {
+    const json = o.toJSON();
+    Object.keys(json).forEach(function (k) {
+      if (json[k] && json[k].__type === 'Date') json[k] = json[k].iso;
+    });
+    return json;
+  });
+}
+
+async function sendExpoPush(messages) {
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+  if (process.env.EXPO_ACCESS_TOKEN) headers.Authorization = 'Bearer ' + process.env.EXPO_ACCESS_TOKEN;
+  const response = await Parse.Cloud.httpRequest({ method: 'POST', url: EXPO_PUSH_URL, headers: headers, body: messages });
+  const tickets = response && response.data && response.data.data;
+  return Array.isArray(tickets) ? tickets : [];
+}
+
+/**
+ * processRecurring (daily job): push today's reminders to every user with a
+ * registered phone. Sent reminders go in ReminderLog (private), so running the
+ * job twice the same day sends nothing twice. Tokens Expo reports as
+ * DeviceNotRegistered are soft-deleted. Pass {"now": "<ISO>"} to test a day.
+ */
+async function processRecurring(request) {
+  const params = request.params || {};
+  const now = params.now ? new Date(params.now) : new Date();
+  const tokens = await findAll('DeviceToken', function () {});
+  const tokensByOwner = {};
+  tokens.forEach(function (row) {
+    const ownerId = pointerId(row.get('owner'));
+    if (ownerId) (tokensByOwner[ownerId] = tokensByOwner[ownerId] || []).push(row);
+  });
+
+  let sent = 0;
+  const owners = Object.keys(tokensByOwner);
+  for (let i = 0; i < owners.length; i += 1) {
+    const owner = Parse.User.createWithoutData(owners[i]);
+    const mine = function (query) {
+      query.equalTo('owner', owner);
+    };
+    const data = {
+      rules: plain(await findAll('RecurringRule', mine)),
+      installments: plain(await findAll('Installment', mine)),
+      debts: plain(await findAll('Debt', mine)),
+      payments: plain(await findAll('DebtPayment', mine)),
+    };
+    const reminders = remindersFor(data, now).map(function (r) {
+      return { key: owners[i] + ':' + r.key, title: r.title, body: r.body };
+    });
+    if (!reminders.length) continue;
+
+    const logQuery = new Parse.Query('ReminderLog');
+    logQuery.containedIn(
+      'key',
+      reminders.map(function (r) {
+        return r.key;
+      }),
+    );
+    logQuery.limit(1000);
+    const done = {};
+    (await logQuery.find(MASTER)).forEach(function (row) {
+      done[row.get('key')] = true;
+    });
+    const fresh = reminders.filter(function (r) {
+      return !done[r.key];
+    });
+    if (!fresh.length) continue;
+
+    const outgoing = [];
+    fresh.forEach(function (r) {
+      tokensByOwner[owners[i]].forEach(function (row) {
+        outgoing.push({ row: row, message: { to: row.get('expoPushToken'), title: r.title, body: r.body, sound: 'default', channelId: 'reminders' } });
+      });
+    });
+    const dead = [];
+    for (let b = 0; b < outgoing.length; b += PUSH_BATCH) {
+      const batch = outgoing.slice(b, b + PUSH_BATCH);
+      const tickets = await sendExpoPush(
+        batch.map(function (o) {
+          return o.message;
+        }),
+      );
+      tickets.forEach(function (ticket, index) {
+        if (ticket && ticket.status === 'ok') sent += 1;
+        const row = batch[index] && batch[index].row;
+        if (row && ticket && ticket.details && ticket.details.error === 'DeviceNotRegistered' && dead.indexOf(row) < 0) dead.push(row);
+      });
+    }
+    dead.forEach(function (row) {
+      row.set('deletedAt', now);
+      row.set('clientUpdatedAt', now);
+    });
+    if (dead.length) await Parse.Object.saveAll(dead, MASTER);
+    await Parse.Object.saveAll(
+      fresh.map(function (r) {
+        const row = new Parse.Object('ReminderLog');
+        row.set('key', r.key);
+        row.set('sentAt', now);
+        return row;
+      }),
+      MASTER,
+    );
+  }
+  const summary = 'processRecurring done: ' + owners.length + ' users with push, ' + sent + ' notifications sent';
+  if (request.message) request.message(summary);
+  return summary;
+}
+
+Parse.Cloud.job('processRecurring', processRecurring);
+
 // ================================================================ test hooks
 // Ignored by Back4App; lets the Jest tests inspect the definitions above.
 if (typeof module !== 'undefined' && module.exports) {
@@ -1323,5 +1585,8 @@ if (typeof module !== 'undefined' && module.exports) {
     compareKeys: compareKeys,
     isCursor: isCursor,
     PULL_CLASSES: PULL_CLASSES,
+    manilaDay: manilaDay,
+    remindersFor: remindersFor,
+    processRecurring: processRecurring,
   };
 }
