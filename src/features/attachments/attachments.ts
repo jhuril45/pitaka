@@ -11,6 +11,7 @@ import { profilePin } from '@/data/pins';
 import { saveRecord } from '@/data/repo';
 import Storage from '@/lib/kv';
 import { Parse } from '@/parse/init';
+import { registerBeforePush } from '@/sync/engine';
 
 /**
  * Receipt photos. A photo is shrunk to a JPEG and queued on the device; on the
@@ -130,3 +131,6 @@ export async function uploadPendingAttachments(): Promise<number> {
   if (uploaded) emitChange(ATTACHMENT_CLASS);
   return uploaded;
 }
+
+// Upload queued photos at the start of every sync.
+registerBeforePush(uploadPendingAttachments);

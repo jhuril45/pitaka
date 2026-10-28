@@ -48,3 +48,12 @@ export async function clearIssues(): Promise<void> {
   await Storage.removeItem(ISSUES_KEY);
   emitChange(SYNC_ISSUE_CLASS);
 }
+
+/** Remove one entry (e.g. after retrying it). */
+export async function removeIssue(id: string): Promise<void> {
+  await withLock(async () => {
+    const issues = await read();
+    await Storage.setItem(ISSUES_KEY, JSON.stringify(issues.filter((i) => i.id !== id)));
+  });
+  emitChange(SYNC_ISSUE_CLASS);
+}

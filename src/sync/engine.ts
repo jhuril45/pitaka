@@ -6,7 +6,6 @@ import { emitChange } from '@/data/events';
 import { getLocal, putManyLocal, dropLocal } from '@/data/local-store';
 import { windowStart } from '@/data/pins';
 import { saveSharedData } from '@/data/shared-cache';
-import { uploadPendingAttachments } from '@/features/attachments/attachments';
 import type { AnyRecord, LocalClassName } from '@/data/records';
 import { bootstrap, syncPull, syncPush, type PullResult } from '@/parse/cloud';
 import { Parse } from '@/parse/init';
@@ -34,6 +33,17 @@ const USER_CLASSES = new Set<string>(USER_DATA_CLASSES);
 export type SyncOutcome = 'synced' | 'offline' | 'signed-out' | 'error';
 
 let running: Promise<SyncOutcome> | null = null;
+
+/**
+ * Work to do at the start of each online sync, before the outbox is pushed.
+ * Features register here (the attachment uploader does) so the engine doesn't
+ * import them — they import the repository, which imports the engine.
+ */
+const beforePush: (() => Promise<unknown>)[] = [];
+
+export function registerBeforePush(step: () => Promise<unknown>): void {
+  if (!beforePush.includes(step)) beforePush.push(step);
+}
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let failures = 0;
 
@@ -225,8 +235,8 @@ export function syncNow(_reason = 'manual'): Promise<SyncOutcome> {
     }
     store.set({ status: 'syncing', error: null });
     try {
-      // Receipt photos first: their Attachment rows join this push.
-      await uploadPendingAttachments().catch(() => 0);
+      // e.g. receipt photos: their Attachment rows join this push.
+      for (const step of beforePush) await step().catch(() => undefined);
       await pushAll();
       await pullAll(userId);
       failures = 0;

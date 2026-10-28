@@ -216,6 +216,21 @@ describe('server responses', () => {
     expect(await phone.issues.listIssues()).toEqual([expect.objectContaining({ kind: 'rejected', uuid: bad.uuid })]);
   });
 
+  it('Retry re-sends a refused row once the server accepts it', async () => {
+    const phone = device();
+    const row = await phone.repo.saveRecord('Note', note('needs newer server'));
+    server.rejectUuids.add(row.uuid);
+    await phone.engine.syncNow();
+    const [issue] = await phone.issues.listIssues();
+    expect(issue).toMatchObject({ kind: 'rejected', uuid: row.uuid });
+
+    server.rejectUuids.delete(row.uuid); // e.g. the user redeployed Cloud Code
+    expect(await phone.retry.retryIssue(issue!)).toBe(true);
+    await phone.engine.syncNow();
+    expect(server.rows(USER).map((r) => r.record.uuid)).toEqual([row.uuid]);
+    expect(await phone.issues.listIssues()).toEqual([]);
+  });
+
   it('pages through many rows, including rows that share a timestamp', async () => {
     const a = device();
     a.online = false;

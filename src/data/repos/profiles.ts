@@ -12,6 +12,7 @@ import { stableUuid } from '@/lib/ids';
 import { listLive } from '../local-store';
 import { PIN_PROFILES } from '../pins';
 import { getRecord, saveRecord } from '../repo';
+import { useLocalQuery } from '../use-local-query';
 
 export async function listProfiles(): Promise<ProfileRecord[]> {
   const profiles = await listLive<ProfileRecord>('Profile', [PIN_PROFILES]);
@@ -97,4 +98,9 @@ export async function loadCurrentProfile(userId: string): Promise<string | null>
 
 export async function saveCurrentProfile(userId: string, profileUuid: string): Promise<void> {
   await Storage.setItem(currentKey(userId), profileUuid);
+}
+
+/** The profile record (for its name and base currency). */
+export function useProfile(profileUuid: string) {
+  return useLocalQuery(async () => (await listProfiles()).find((p) => p.uuid === profileUuid) ?? null, ['Profile'], [profileUuid]);
 }

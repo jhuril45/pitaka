@@ -4,6 +4,8 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Logo } from '@/components/logo';
 import { AppText } from '@/components/ui/text';
 import { useProfileSetup } from '@/data/repos/use-profile-setup';
+// Registers the receipt uploader with the sync engine.
+import '@/features/attachments/attachments';
 import { useSyncTriggers } from '@/sync/use-sync-triggers';
 import { useTheme } from '@/theme';
 
@@ -34,6 +36,8 @@ export default function AppLayout() {
       <Stack.Screen name="accounts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Account' }} />
       <Stack.Screen name="categories/index" options={{ headerShown: true, title: 'Categories' }} />
       <Stack.Screen name="categories/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Category' }} />
+      <Stack.Screen name="budgets/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Budget' }} />
+      <Stack.Screen name="goals/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Goal' }} />
       <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
     </Stack>
   );

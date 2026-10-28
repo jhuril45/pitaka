@@ -97,6 +97,42 @@ export function findReceiptDate(text: string, now: Date): Date | null {
   return null;
 }
 
+export interface PositionedLine {
+  text: string;
+  top: number;
+  height: number;
+  left: number;
+}
+
+/**
+ * Rebuild printed rows from OCR lines with positions. ML Kit returns a
+ * two-column receipt as separate blocks ("AMOUNT DUE" in one, "164.00" in
+ * another), so labels lose their amounts; lines whose vertical centres line
+ * up are joined left-to-right into one row again.
+ */
+export function rowsFromLines(lines: PositionedLine[]): string[] {
+  const sorted = [...lines].filter((l) => l.text.trim()).sort((a, b) => a.top + a.height / 2 - (b.top + b.height / 2));
+  const rows: { center: number; height: number; parts: PositionedLine[] }[] = [];
+  for (const line of sorted) {
+    const center = line.top + line.height / 2;
+    const row = rows.find((r) => Math.abs(r.center - center) <= Math.max(r.height, line.height) * 0.5);
+    if (row) {
+      row.parts.push(line);
+      row.center = (row.center * (row.parts.length - 1) + center) / row.parts.length;
+    } else {
+      rows.push({ center, height: line.height, parts: [line] });
+    }
+  }
+  return rows
+    .sort((a, b) => a.center - b.center)
+    .map((r) =>
+      r.parts
+        .sort((a, b) => a.left - b.left)
+        .map((p) => p.text.trim())
+        .join('  '),
+    );
+}
+
 export function parseReceipt(text: string, now = new Date()): ReceiptGuess {
   const lines = text
     .split(/\r?\n/)

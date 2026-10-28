@@ -12,10 +12,14 @@ import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
+import { useBudgets } from '@/data/repos/plans';
 import { listProfiles } from '@/data/repos/profiles';
 import { useAccountBalances } from '@/data/repos/use-balances';
 import { useLocalQuery } from '@/data/use-local-query';
+import { useAuth } from '@/features/auth/auth-context';
+import { BudgetCard } from '@/features/plans/budget-card';
 import { TransactionRow } from '@/features/transactions/transaction-row';
+import { budgetStatus } from '@/lib/budgets';
 import { netWorth, periodTotals } from '@/lib/balances';
 import { usePrivacyStore } from '@/stores/privacy-store';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
@@ -24,6 +28,8 @@ import { useTheme } from '@/theme';
 export default function HomeScreen() {
   const profileUuid = useCurrentProfileUuid();
   const { colors, spacing } = useTheme();
+  const auth = useAuth();
+  const firstName = auth.status === 'account' ? auth.account.name.trim().split(/\s+/)[0] : '';
   const { hideAmounts, toggleHideAmounts } = usePrivacyStore();
   const { data: profile } = useLocalQuery(async () => (await listProfiles()).find((p) => p.uuid === profileUuid), ['Profile'], [profileUuid]);
   const { accounts, transactions, balances } = useAccountBalances(profileUuid);
@@ -36,9 +42,26 @@ export default function HomeScreen() {
     [transactions, month],
   );
   const worth = accounts && balances ? netWorth(accounts, balances, baseCurrency) : null;
+  const { data: budgets } = useBudgets(profileUuid);
+  // The two budgets closest to their limit.
+  const topBudgets = useMemo(
+    () =>
+      budgets && transactions && categories
+        ? budgets
+            .map((budget) => ({ budget, status: budgetStatus(budget, transactions, categories) }))
+            .sort((a, b) => b.status.usedBps - a.status.usedBps)
+            .slice(0, 2)
+        : [],
+    [budgets, transactions, categories],
+  );
 
   return (
-    <Screen title={profile ? `Hi! ${profile.name}` : 'Home'}>
+    <Screen title={firstName ? `Hi, ${firstName}` : 'Home'}>
+      {profile ? (
+        <AppText variant="label" tone="muted" style={{ marginTop: -spacing.md }}>
+          {profile.name}
+        </AppText>
+      ) : null}
       <SyncIndicator />
 
       <Card>
@@ -81,6 +104,12 @@ export default function HomeScreen() {
           </View>
         </View>
       </Card>
+
+      {categories
+        ? topBudgets.map(({ budget, status }) => (
+            <BudgetCard key={budget.uuid} budget={budget} status={status} categories={categories} currency={baseCurrency} />
+          ))
+        : null}
 
       <Card>
         <View style={styles.between}>

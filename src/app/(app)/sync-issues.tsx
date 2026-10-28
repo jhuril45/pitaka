@@ -7,6 +7,7 @@ import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useLocalQuery } from '@/data/use-local-query';
 import { clearIssues, listIssues, SYNC_ISSUE_CLASS } from '@/sync/issues';
+import { retryIssue } from '@/sync/retry';
 import { useTheme } from '@/theme';
 
 /** Changes that lost a conflict or were refused by the server, newest first. */
@@ -31,8 +32,11 @@ export default function SyncIssuesScreen() {
           <AppText>{issue.message}</AppText>
           {issue.discarded ? (
             <AppText variant="caption" tone="muted" numberOfLines={4}>
-              Discarded: {JSON.stringify(issue.discarded)}
+              {issue.kind === 'rejected' ? 'Kept on this device' : 'Discarded'}: {JSON.stringify(issue.discarded)}
             </AppText>
+          ) : null}
+          {issue.kind === 'rejected' ? (
+            <Button title="Retry" variant="outline" onPress={() => void retryIssue(issue)} />
           ) : null}
         </Card>
       ))}

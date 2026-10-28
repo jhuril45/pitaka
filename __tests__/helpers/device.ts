@@ -22,6 +22,7 @@ type Modules = {
   merchantMappings: typeof import('@/data/repos/merchant-mappings');
   sharedCache: typeof import('@/data/shared-cache');
   attachments: typeof import('@/features/attachments/attachments');
+  retry: typeof import('@/sync/retry');
 };
 
 export interface Device extends Modules {
@@ -101,6 +102,7 @@ export function createDevice(server: FakeServer, userId: string): Device {
       merchantMappings: require('@/data/repos/merchant-mappings'),
       sharedCache: require('@/data/shared-cache'),
       attachments: require('@/features/attachments/attachments'),
+      retry: require('@/sync/retry'),
     });
   });
 

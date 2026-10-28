@@ -1,4 +1,29 @@
-import { parseReceipt } from '@/lib/ocr/receipt';
+import { parseReceipt, rowsFromLines } from '@/lib/ocr/receipt';
+
+describe('rowsFromLines (ML Kit column blocks)', () => {
+  // ML Kit returns the label column and the amount column as separate blocks.
+  const labels = ['SUBTOTAL', 'VATable Sales', 'VAT Amount', 'AMOUNT DUE', 'CASH', 'CHANGE'];
+  const amounts = ['164.00', '146.43', '17.57', '164.00', '200.00', '36.00'];
+  const lines = [
+    { text: 'JOLLIBEE FOODS CORPORATION', top: 60, height: 40, left: 60 },
+    ...labels.map((text, i) => ({ text, top: 500 + i * 52, height: 40, left: 60 })),
+    ...amounts.map((text, i) => ({ text, top: 503 + i * 52, height: 38, left: 700 })),
+  ];
+
+  it('re-joins each label with the amount printed on its row', () => {
+    const rows = rowsFromLines(lines);
+    expect(rows).toContain('AMOUNT DUE  164.00');
+    expect(rows).toContain('CASH  200.00');
+    expect(rows[0]).toBe('JOLLIBEE FOODS CORPORATION');
+  });
+
+  it('then finds the amount due instead of the cash tendered', () => {
+    expect(parseReceipt(rowsFromLines(lines).join('\n')).amountMinor).toBe(16400);
+    // Without the rows, the column layout loses the label (what the emulator showed: 200.00).
+    const columns = [...labels, ...amounts].join('\n');
+    expect(parseReceipt(columns).amountMinor).not.toBe(16400);
+  });
+});
 
 const NOW = new Date(2026, 9, 28, 15, 0, 0);
 const day = (d: Date | null) => (d ? [d.getFullYear(), d.getMonth() + 1, d.getDate()] : null);
