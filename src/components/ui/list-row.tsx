@@ -15,15 +15,17 @@ interface ListRowProps {
   onLongPress?: () => void;
   indent?: boolean;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 /** Tappable row used in lists and pickers. */
-export function ListRow({ title, subtitle, color, right, onPress, onLongPress, indent, accessibilityLabel }: ListRowProps) {
+export function ListRow({ title, subtitle, color, right, onPress, onLongPress, indent, accessibilityLabel, accessibilityHint }: ListRowProps) {
   const { colors, spacing } = useTheme();
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => [

@@ -24,6 +24,7 @@ type Modules = {
   attachments: typeof import('@/features/attachments/attachments');
   retry: typeof import('@/sync/retry');
   obligations: typeof import('@/data/repos/obligations');
+  backup: typeof import('@/features/data/backup');
 };
 
 export interface Device extends Modules {
@@ -105,6 +106,7 @@ export function createDevice(server: FakeServer, userId: string): Device {
       attachments: require('@/features/attachments/attachments'),
       retry: require('@/sync/retry'),
       obligations: require('@/data/repos/obligations'),
+      backup: require('@/features/data/backup'),
     });
   });
 

@@ -507,12 +507,37 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
 - Tested: `portfolio.test.ts`, `cloud-prices.test.ts`; holdings, P/L and net worth checked on the
   emulator (the live price lookup waits on the redeploy).
 
+## Milestone 12: Accounts & data ✅
+
+- **Profiles** (More → Profiles, or tap the profile name on Home): create Personal / Family /
+  Business profiles (each starts with the default categories and a Cash account, in PHP or USD),
+  switch (each profile's data lives in its own pins), long-press to rename.
+- **Notes** (More → Notes): quick to-dos with optional due dates; open notes due within a week
+  show on Home. Home also shows a daily summary ("Today: ₱X spent").
+- **Export & import** (More → Export & import), on the device: JSON backup of the current profile
+  (everything plus the last 12 months of transactions) and transactions as CSV, through the share
+  sheet (download on web). Import validates every row with the shared zod schemas and merges by id:
+  newer local rows win, so importing twice changes nothing.
+- **App lock** (phone only): 4–6 digit PIN stored as a salted SHA-256 hash in secure storage, plus
+  fingerprint/face when enrolled; locks on start and after 30 s away; the app underneath is hidden
+  from screen readers while locked; cleared on log out and account deletion.
+- **Older history** (More → Older history): `getTransactionsPage` (server, cursor on
+  occurredAt + uuid) pages transactions older than 12 months into their month pins.
+- **cleanupDeleted** (job): removes soft-deleted rows after 90 days (and deleted receipts' files).
+- **buildMerchantDictionary** (job, opt-in): only users who turn on "Improve suggestions for
+  everyone" contribute merchant → default-category votes; a merchant needs 3+ users.
+- **Not applicable:** `claimAnonymousData` / anonymous upgrade — there's no guest mode (you asked for
+  mandatory login), so there is no anonymous data to claim.
+- Tested: `backup.test.ts` (round trip, idempotent import, newer-local-wins, CSV), cloud tests for
+  paging and the dictionary; notes, app lock (wrong/right PIN) and profiles checked on the emulator.
+
 ---
 
 ## Where we stopped
 1. **Redeploy `cloud/main.js`** (Cloud Code → Deploy), then run **setupSchema** once (adds
    `ReminderLog`). Schedule **processRecurring** daily at 01:00 UTC and **generateInsights**
-   weekly (Mondays 00:30 UTC) and **refreshPrices** hourly; run **rebuildAllSummaries** once.
+   weekly (Mondays 00:30 UTC), **refreshPrices** hourly, **cleanupDeleted** and
+   **buildMerchantDictionary** weekly; run **rebuildAllSummaries** once.
    Optional env vars: `FINNHUB_API_KEY` (US stock prices), `COINGECKO_API_KEY`, `EXPO_ACCESS_TOKEN`. After the redeploy, use
    More → Sync issues → Retry for any refused receipt photo.
 2. Run `npm run test:integration` against the dev app.

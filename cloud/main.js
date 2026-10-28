@@ -28,6 +28,10 @@
  *                   stocks (Phisix) need no key; US stocks need the env var
  *                   FINNHUB_API_KEY (else the app uses manual prices).
  *                   Optional: COINGECKO_API_KEY.
+ *   8. cleanupDeleted: schedule it weekly. Permanently removes rows deleted
+ *                   more than 90 days ago (and deleted receipts' files).
+ *   9. buildMerchantDictionary: schedule it weekly. Builds the shared merchant
+ *                   → category suggestions, only from users who opted in.
  *
  * Security model
  *   - User-data classes: clients may only READ their own rows (pointer
@@ -2285,6 +2289,227 @@ Parse.Cloud.job('rebuildAllSummaries', async function (request) {
   return summary;
 });
 
+// ================================================================ history, cleanup, shared dictionary
+
+const MAX_PAGE = 200;
+
+/**
+ * getTransactionsPage({ profileUuid, before?, beforeUuid?, limit? }) → { transactions, next }
+ * Older history, newest first, for months the phone doesn't keep. Pass the
+ * returned `next` ({ before, beforeUuid }) to continue; null when done.
+ */
+async function getTransactionsPage(request) {
+  const user = requireUser(request);
+  const params = request.params || {};
+  if (!isUuid(params.profileUuid)) throw invalid('profileUuid must be a uuid.');
+  const limit = Math.min(MAX_PAGE, Math.max(1, Number(params.limit) || 100));
+  const before = params.before ? new Date(params.before) : null;
+  if (before && isNaN(before.getTime())) throw invalid('before must be an ISO date.');
+  if (params.beforeUuid !== undefined && params.beforeUuid !== null && !isUuid(params.beforeUuid)) throw invalid('beforeUuid must be a uuid.');
+
+  const base = function () {
+    const q = new Parse.Query('Transaction');
+    q.equalTo('owner', user);
+    q.equalTo('profileUuid', params.profileUuid);
+    q.equalTo('deletedAt', null);
+    return q;
+  };
+  let query;
+  if (before) {
+    // (occurredAt, uuid) < (before, beforeUuid), so equal timestamps aren't skipped.
+    const older = base();
+    older.lessThan('occurredAt', before);
+    if (params.beforeUuid) {
+      const same = base();
+      same.equalTo('occurredAt', before);
+      same.lessThan('uuid', params.beforeUuid);
+      query = Parse.Query.or(older, same);
+    } else {
+      query = older;
+    }
+  } else {
+    query = base();
+  }
+  query.descending('occurredAt');
+  query.addDescending('uuid');
+  query.limit(limit + 1);
+  const rows = await query.find(MASTER);
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    transactions: page.map(function (row) {
+      return toRecord('Transaction', row);
+    }),
+    next: rows.length > limit && last ? { before: last.get('occurredAt').toISOString(), beforeUuid: last.get('uuid') } : null,
+  };
+}
+
+/** Deleted rows are kept this long, so phones that were offline still learn about the delete. */
+const TOMBSTONE_DAYS = 90;
+
+/**
+ * cleanupDeleted (job, e.g. weekly): permanently remove soft-deleted rows
+ * older than 90 days, and the files of deleted attachments.
+ */
+async function cleanupDeleted(request) {
+  const params = request.params || {};
+  const now = params.now ? new Date(params.now) : new Date();
+  const cutoff = new Date(now.getTime() - TOMBSTONE_DAYS * DAY_MS);
+  let removed = 0;
+  for (let i = 0; i < USER_DATA_CLASSES.length; i += 1) {
+    const className = USER_DATA_CLASSES[i];
+    for (;;) {
+      const query = new Parse.Query(className);
+      query.lessThan('deletedAt', cutoff);
+      query.limit(PAGE);
+      const rows = await query.find(MASTER);
+      if (!rows.length) break;
+      if (className === 'Attachment') {
+        for (let r = 0; r < rows.length; r += 1) {
+          const file = rows[r].get('file');
+          if (file && typeof file.destroy === 'function') {
+            try {
+              await file.destroy(MASTER);
+            } catch (e) {
+              console.error('could not delete file ' + file.name() + ': ' + (e && e.message));
+            }
+          }
+        }
+      }
+      await Parse.Object.destroyAll(rows, MASTER);
+      removed += rows.length;
+      if (rows.length < PAGE) break;
+    }
+  }
+  const summary = 'cleanupDeleted done: ' + removed + ' rows deleted before ' + cutoff.toISOString().slice(0, 10);
+  if (request.message) request.message(summary);
+  return summary;
+}
+
+/** A Setting users turn on to share their merchant → category choices, anonymously. */
+const SHARE_SETTING_KEY = 'shareMerchantData';
+const MIN_DICTIONARY_USERS = 3;
+
+/**
+ * Count anonymous votes into dictionary rows. `votes` maps merchant →
+ * { userId → categoryKey }; a merchant needs MIN_DICTIONARY_USERS users. Pure.
+ */
+function dictionaryFromVotes(votes) {
+  const rows = [];
+  Object.keys(votes).forEach(function (merchant) {
+    const byUser = votes[merchant];
+    const users = Object.keys(byUser);
+    if (users.length < MIN_DICTIONARY_USERS) return;
+    const counts = {};
+    users.forEach(function (u) {
+      counts[byUser[u]] = (counts[byUser[u]] || 0) + 1;
+    });
+    const best = Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || (a < b ? -1 : 1);
+    })[0];
+    rows.push({ merchantNormalized: merchant, suggestedCategoryKey: best, confidenceBps: Math.floor((counts[best] * 10000) / users.length) });
+  });
+  return rows;
+}
+
+/**
+ * buildMerchantDictionary (job, opt-in data only): from users who turned on
+ * "Share merchant categories", map their learned merchants to the default
+ * category keys (matched by category name) and refresh MerchantDictionary.
+ * Only the merchant name and a default category key leave a user's data.
+ */
+async function buildMerchantDictionary(request) {
+  const settings = await findAll('Setting', function (q) {
+    q.equalTo('key', SHARE_SETTING_KEY);
+  });
+  const optedIn = {};
+  settings.forEach(function (row) {
+    let on = false;
+    try {
+      on = JSON.parse(row.get('valueJson')) === true;
+    } catch (e) {
+      on = false;
+    }
+    const ownerId = pointerId(row.get('owner'));
+    if (on && ownerId) optedIn[ownerId] = true;
+  });
+  const keyByName = {};
+  DEFAULT_CATEGORIES.forEach(function (c) {
+    keyByName[c.name.toLowerCase()] = c.key;
+  });
+
+  const votes = {};
+  const owners = Object.keys(optedIn);
+  for (let i = 0; i < owners.length; i += 1) {
+    const owner = Parse.User.createWithoutData(owners[i]);
+    const mappings = await findAll('MerchantMapping', function (q) {
+      q.equalTo('owner', owner);
+    });
+    if (!mappings.length) continue;
+    const categoryUuids = mappings.map(function (m) {
+      return m.get('categoryUuid');
+    });
+    const names = {};
+    (
+      await findAll('Category', function (q) {
+        q.equalTo('owner', owner);
+        q.containedIn('uuid', categoryUuids);
+      })
+    ).forEach(function (c) {
+      names[c.get('uuid')] = String(c.get('name') || '').toLowerCase();
+    });
+    mappings.forEach(function (m) {
+      const key = keyByName[names[m.get('categoryUuid')]];
+      const merchant = m.get('merchantNormalized');
+      if (!key || !merchant) return;
+      (votes[merchant] = votes[merchant] || {})[owners[i]] = key;
+    });
+  }
+
+  const rows = dictionaryFromVotes(votes);
+  const saved = await upsertBy('MerchantDictionary', 'merchantNormalized', rows);
+  const summary = 'buildMerchantDictionary done: ' + owners.length + ' users opted in, ' + saved + ' merchants updated';
+  if (request.message) request.message(summary);
+  return summary;
+}
+
+/** Insert or update rows matched on one key field (like upsertByKey, any field). */
+async function upsertBy(className, field, rows) {
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500);
+    const query = new Parse.Query(className);
+    query.containedIn(
+      field,
+      chunk.map(function (r) {
+        return r[field];
+      }),
+    );
+    query.limit(1000);
+    const existing = {};
+    (await query.find(MASTER)).forEach(function (o) {
+      existing[o.get(field)] = o;
+    });
+    const toSave = [];
+    chunk.forEach(function (row) {
+      const object = existing[row[field]] || new Parse.Object(className);
+      const same = Object.keys(row).every(function (k) {
+        return object.get(k) === row[k];
+      });
+      if (same && object.id) return;
+      object.set(row);
+      toSave.push(object);
+    });
+    if (toSave.length) await Parse.Object.saveAll(toSave, MASTER);
+    saved += toSave.length;
+  }
+  return saved;
+}
+
+Parse.Cloud.define('getTransactionsPage', getTransactionsPage);
+Parse.Cloud.job('cleanupDeleted', cleanupDeleted);
+Parse.Cloud.job('buildMerchantDictionary', buildMerchantDictionary);
+
 // ================================================================ test hooks
 // Ignored by Back4App; lets the Jest tests inspect the definitions above.
 if (typeof module !== 'undefined' && module.exports) {
@@ -2316,5 +2541,6 @@ if (typeof module !== 'undefined' && module.exports) {
     computeInsights: computeInsights,
     decimalToMinor: decimalToMinor,
     PRICE_PROVIDERS: PRICE_PROVIDERS,
+    dictionaryFromVotes: dictionaryFromVotes,
   };
 }

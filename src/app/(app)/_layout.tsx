@@ -7,6 +7,7 @@ import { useProfileSetup } from '@/data/repos/use-profile-setup';
 // Registers the receipt uploader with the sync engine.
 import '@/features/attachments/attachments';
 import { Toast } from '@/features/feedback/toast';
+import { LockGate } from '@/features/lock/lock-gate';
 import { useChores } from '@/features/reminders/use-chores';
 import { useSyncTriggers } from '@/sync/use-sync-triggers';
 import { useTheme } from '@/theme';
@@ -38,7 +39,7 @@ function SignedInStack({ profileUuid }: { profileUuid: string }) {
   useChores(profileUuid);
 
   return (
-    <View style={styles.flex}>
+    <LockGate>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="quick-add" options={{ presentation: 'modal', headerShown: true, title: 'Quick add' }} />
@@ -57,16 +58,20 @@ function SignedInStack({ profileUuid }: { profileUuid: string }) {
         <Stack.Screen name="forecast" options={{ headerShown: true, title: 'Cashflow forecast' }} />
         <Stack.Screen name="investments/index" options={{ headerShown: true, title: 'Investments' }} />
         <Stack.Screen name="holdings/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Holding' }} />
+        <Stack.Screen name="profiles" options={{ headerShown: true, title: 'Profiles' }} />
+        <Stack.Screen name="notes" options={{ headerShown: true, title: 'Notes' }} />
+        <Stack.Screen name="data" options={{ headerShown: true, title: 'Export & import' }} />
+        <Stack.Screen name="app-lock" options={{ headerShown: true, title: 'App lock' }} />
+        <Stack.Screen name="history" options={{ headerShown: true, title: 'Older history' }} />
         <Stack.Screen name="statistics" options={{ headerShown: true, title: 'Statistics' }} />
         <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
       </Stack>
       {/* Feedback after saving, above every screen. */}
       <Toast />
-    </View>
+    </LockGate>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   setup: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 });

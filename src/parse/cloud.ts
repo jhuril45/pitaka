@@ -119,3 +119,13 @@ export interface PriceSnapshot {
 export function getPrices(symbols: { symbol: string; assetClass: PriceSnapshot['assetClass'] }[]): Promise<{ prices: PriceSnapshot[] }> {
   return Parse.Cloud.run('getPrices', { symbols });
 }
+
+export interface TransactionsPage {
+  transactions: Row[];
+  next: { before: string; beforeUuid: string } | null;
+}
+
+/** History older than the phone keeps, newest first. */
+export function getTransactionsPage(params: { profileUuid: string; before?: string; beforeUuid?: string; limit?: number }): Promise<TransactionsPage> {
+  return Parse.Cloud.run('getTransactionsPage', params);
+}

@@ -11,6 +11,8 @@ import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { getUploadOnCellular, setUploadOnCellular } from '@/features/attachments/attachments';
 import { useAuth } from '@/features/auth/auth-context';
+import { clearLock } from '@/features/lock/lock-settings';
+import { SHARE_MERCHANT_DATA, setAccountSetting, useAccountSetting } from '@/data/repos/settings';
 import { deleteAccount } from '@/parse/cloud';
 import { readParseConfig } from '@/parse/config';
 import { checkLocalDatastore, type DatastoreCheckResult } from '@/parse/self-check';
@@ -27,6 +29,16 @@ export default function MoreScreen() {
         <AppText variant="heading">Money</AppText>
         <ListRow title="Accounts" subtitle="Banks, e-wallets, cash and cards" onPress={() => router.push('/accounts')} />
         <ListRow title="Categories" subtitle="Expense and income categories" onPress={() => router.push('/categories')} />
+        <ListRow title="Profiles" subtitle="Personal, family or business money, kept apart" onPress={() => router.push('/profiles')} />
+        <ListRow title="Notes" subtitle="Quick money notes and to-dos" onPress={() => router.push('/notes')} />
+        <ListRow title="Investments" subtitle="Stocks and crypto" onPress={() => router.push('/investments')} />
+      </Card>
+      <Card>
+        <AppText variant="heading">Your data</AppText>
+        <ListRow title="Export & import" subtitle="Back up to a file, or bring data back in" onPress={() => router.push('/data')} />
+        <ListRow title="App lock" subtitle="Ask for your PIN or fingerprint when opening Pitaka" onPress={() => router.push('/app-lock')} />
+        <ListRow title="Older history" subtitle="Transactions from more than 12 months ago" onPress={() => router.push('/history')} />
+        <ShareMerchantsRow />
       </Card>
       <SyncCard />
       <DiagnosticsCard />
@@ -43,6 +55,7 @@ function AccountCard() {
   async function logoutNow() {
     setBusy('logout');
     stopSync();
+    await clearLock();
     await auth.logout();
   }
 
@@ -72,6 +85,7 @@ function AccountCard() {
     setBusy('delete');
     try {
       await deleteAccount();
+      await clearLock();
       await auth.logout();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not delete the account.');
@@ -91,6 +105,33 @@ function AccountCard() {
         <Button title="Delete account" variant="ghost" loading={busy === 'delete'} disabled={!!busy} onPress={onDelete} />
       </View>
     </Card>
+  );
+}
+
+/** Opt-in: contribute merchant → category choices (no amounts or dates) to everyone's suggestions. */
+function ShareMerchantsRow() {
+  const auth = useAuth();
+  const { colors, spacing } = useTheme();
+  const { data: setting } = useAccountSetting(SHARE_MERCHANT_DATA);
+  const on = setting?.value === true;
+  if (auth.status !== 'account') return null;
+  const userId = auth.account.id;
+  return (
+    <View style={[styles.switchRow, { gap: spacing.md, paddingVertical: spacing.sm }]}>
+      <View style={styles.flex}>
+        <AppText>Improve suggestions for everyone</AppText>
+        <AppText variant="caption" tone="muted">
+          Share which category you pick for each merchant — only the merchant name and category, never amounts or dates.
+        </AppText>
+      </View>
+      <Switch
+        accessibilityLabel="Share merchant categories"
+        value={on}
+        disabled={setting === undefined}
+        trackColor={{ true: colors.primary }}
+        onValueChange={(next) => void setAccountSetting(userId, SHARE_MERCHANT_DATA, next)}
+      />
+    </View>
   );
 }
 

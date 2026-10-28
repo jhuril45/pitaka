@@ -123,3 +123,36 @@ describe('computeInsights', () => {
     expect(internals.computeInsights(lastWeek, names, NOW)).toEqual([]);
   });
 });
+
+describe('dictionaryFromVotes (opt-in merchant dictionary)', () => {
+  it('needs three users per merchant and reports the majority with its share', () => {
+    const rows = internals.dictionaryFromVotes({
+      jollibee: { a: 'food.dining', b: 'food.dining', c: 'food.groceries' },
+      meralco: { a: 'bills.electricity', b: 'bills.electricity' },
+    });
+    expect(rows).toEqual([{ merchantNormalized: 'jollibee', suggestedCategoryKey: 'food.dining', confidenceBps: 6666 }]);
+  });
+});
+
+describe('getTransactionsPage', () => {
+  const user = new Parse.User();
+  user.id = 'userA000001';
+  afterEach(() => jest.restoreAllMocks());
+
+  it('validates input', async () => {
+    await expect(functions.getTransactionsPage!({ user, params: { profileUuid: 'nope' } })).rejects.toThrow(/uuid/);
+    await expect(functions.getTransactionsPage!({ user, params: { profileUuid: PROFILE, before: 'yesterday' } })).rejects.toThrow(/ISO/);
+  });
+
+  it('returns a page and a cursor when there is more', async () => {
+    const row = (uuid: string, iso: string) => {
+      const o = new Parse.Object('Transaction');
+      o.set({ uuid, occurredAt: new Date(iso), amountMinor: 100, type: 'expense', profileUuid: PROFILE });
+      return o;
+    };
+    jest.spyOn(Parse.Query.prototype, 'find').mockResolvedValue([row(FOOD, '2025-01-03T00:00:00Z'), row(FUN, '2025-01-02T00:00:00Z')] as never);
+    const page = (await functions.getTransactionsPage!({ user, params: { profileUuid: PROFILE, limit: 1 } })) as { transactions: { uuid: string }[]; next: unknown };
+    expect(page.transactions.map((t: { uuid: string }) => t.uuid)).toEqual([FOOD]);
+    expect(page.next).toEqual({ before: '2025-01-03T00:00:00.000Z', beforeUuid: FOOD });
+  });
+});

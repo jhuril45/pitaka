@@ -43,8 +43,8 @@ describe('registration', () => {
       expect(beforeSave[name]).toBeInstanceOf(Function);
       expect(beforeDelete[name]).toBeInstanceOf(Function);
     }
-    expect(Object.keys(functions).sort()).toEqual(['bootstrap', 'deleteAccount', 'getPrices', 'getStatistics', 'markInsightRead', 'rebuildSummaries', 'registerDevice', 'suggestCategory', 'syncPull', 'syncPush']);
-    expect(Object.keys(jobs).sort()).toEqual(['cleanupInvalidRows', 'generateInsights', 'processRecurring', 'rebuildAllSummaries', 'refreshPrices', 'seedShared', 'setupSchema']);
+    expect(Object.keys(functions).sort()).toEqual(['bootstrap', 'deleteAccount', 'getPrices', 'getStatistics', 'getTransactionsPage', 'markInsightRead', 'rebuildSummaries', 'registerDevice', 'suggestCategory', 'syncPull', 'syncPush']);
+    expect(Object.keys(jobs).sort()).toEqual(['buildMerchantDictionary', 'cleanupDeleted', 'cleanupInvalidRows', 'generateInsights', 'processRecurring', 'rebuildAllSummaries', 'refreshPrices', 'seedShared', 'setupSchema']);
     expect(beforeSaveFile).toBeInstanceOf(Function);
   });
 });

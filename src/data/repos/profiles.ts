@@ -1,3 +1,5 @@
+import { randomUUID } from 'expo-crypto';
+
 import Storage from '@/lib/kv';
 
 import {
@@ -39,16 +41,40 @@ const SEED = { clientUpdatedAt: new Date(0).toISOString() };
 export async function ensureDefaultProfile(userId: string): Promise<string> {
   const existing = await listProfiles();
   if (existing.length) return existing[0]!.uuid;
-
   const profileUuid = await stableUuid(`${userId}:profile:default`);
-  await saveRecord('Profile', {
-    uuid: profileUuid,
-    name: 'Personal',
-    baseCurrency: DEFAULT_CURRENCY,
-    icon: 'wallet',
-    color: '#0F766E',
-    type: 'personal',
-  }, SEED);
+  await seedProfile(userId, profileUuid, { name: 'Personal', baseCurrency: DEFAULT_CURRENCY, type: 'personal' }, SEED);
+  return profileUuid;
+}
+
+export interface NewProfile {
+  name: string;
+  baseCurrency: string;
+  type: ProfileRecord['type'];
+}
+
+const PROFILE_COLORS: Record<ProfileRecord['type'], string> = { personal: '#0F766E', family: '#7C3AED', business: '#B45309' };
+
+/** Add another profile (e.g. Family or a small business) with the starter categories and a Cash account. */
+export async function createProfile(userId: string, profile: NewProfile): Promise<string> {
+  const profileUuid = randomUUID();
+  await seedProfile(userId, profileUuid, profile);
+  return profileUuid;
+}
+
+export async function renameProfile(profile: ProfileRecord, name: string): Promise<void> {
+  await saveRecord('Profile', { ...profile, name });
+}
+
+/**
+ * A profile with the default categories and a Cash account. Row uuids derive
+ * from the user and profile, so devices seeding the same profile converge.
+ */
+async function seedProfile(userId: string, profileUuid: string, profile: NewProfile, options?: typeof SEED): Promise<void> {
+  await saveRecord(
+    'Profile',
+    { uuid: profileUuid, name: profile.name, baseCurrency: profile.baseCurrency, icon: 'wallet', color: PROFILE_COLORS[profile.type], type: profile.type },
+    options,
+  );
 
   const uuidOf = new Map<string, string>();
   for (const category of DEFAULT_CATEGORIES) {
@@ -57,35 +83,45 @@ export async function ensureDefaultProfile(userId: string): Promise<string> {
   // Parents before children, so a child's parent always exists locally first.
   const ordered = [...DEFAULT_CATEGORIES].sort((a, b) => Number(!!a.parentKey) - Number(!!b.parentKey));
   for (const category of ordered) {
-    await saveRecord('Category', {
-      uuid: uuidOf.get(category.key)!,
-      profileUuid,
-      parentUuid: category.parentKey ? uuidOf.get(category.parentKey)! : null,
-      name: category.name,
-      kind: category.kind,
-      icon: category.icon,
-      color: category.color,
-      sortOrder: category.sortOrder,
-    }, SEED);
+    await saveRecord(
+      'Category',
+      {
+        uuid: uuidOf.get(category.key)!,
+        profileUuid,
+        parentUuid: category.parentKey ? uuidOf.get(category.parentKey)! : null,
+        name: category.name,
+        kind: category.kind,
+        icon: category.icon,
+        color: category.color,
+        sortOrder: category.sortOrder,
+      },
+      options,
+    );
   }
 
   const cash = BANK_TEMPLATES.find((t) => t.key === 'cash')!;
-  await saveRecord('Account', {
-    uuid: await stableUuid(`${userId}:${profileUuid}:account:cash`),
-    profileUuid,
-    name: cash.name,
-    type: cash.type,
-    currency: cash.currency,
-    openingBalanceMinor: 0,
-    creditLimitMinor: null,
-    icon: cash.icon,
-    color: cash.color,
-    archived: false,
-    sortOrder: 0,
-    templateKey: cash.key,
-  }, SEED);
+  await saveRecord(
+    'Account',
+    {
+      uuid: await stableUuid(`${userId}:${profileUuid}:account:cash`),
+      profileUuid,
+      name: cash.name,
+      type: cash.type,
+      currency: profile.baseCurrency,
+      openingBalanceMinor: 0,
+      creditLimitMinor: null,
+      icon: cash.icon,
+      color: cash.color,
+      archived: false,
+      sortOrder: 0,
+      templateKey: cash.key,
+    },
+    options,
+  );
+}
 
-  return profileUuid;
+export function useProfiles() {
+  return useLocalQuery(listProfiles, ['Profile'], []);
 }
 
 /** The profile this device last used, if it still exists. */

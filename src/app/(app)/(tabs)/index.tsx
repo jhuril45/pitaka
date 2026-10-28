@@ -1,4 +1,4 @@
-import { format, isPast, isToday, isTomorrow } from 'date-fns';
+import { addDays, format, isPast, isToday, isTomorrow } from 'date-fns';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -14,6 +14,7 @@ import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
 import { usePortfolio } from '@/data/repos/holdings';
 import { dismissInsight, useUnreadInsights } from '@/data/repos/insights';
+import { useNotes } from '@/data/repos/notes';
 import { useObligations } from '@/data/repos/obligations';
 import { useBudgets } from '@/data/repos/plans';
 import { listProfiles } from '@/data/repos/profiles';
@@ -74,13 +75,22 @@ export default function HomeScreen() {
   const { data: obligations } = useObligations(profileUuid);
   const { data: insights } = useUnreadInsights(profileUuid);
   const upcoming = useMemo(() => (obligations ? dueSoon(obligations) : []), [obligations]);
+  // Daily summary: today's spending.
+  const today = useMemo(() => periodTotals((transactions ?? []).filter((tx) => isToday(new Date(tx.occurredAt)))), [transactions]);
+  const { data: notes } = useNotes(profileUuid);
+  const notesDue = useMemo(() => {
+    const week = addDays(new Date(), 7);
+    return (notes ?? []).filter((n) => !n.done && n.dueAt && new Date(n.dueAt) <= week).slice(0, 3);
+  }, [notes]);
 
   return (
     <Screen title={firstName ? `Hi, ${firstName}` : 'Home'}>
       {profile ? (
-        <AppText variant="label" tone="muted" style={{ marginTop: -spacing.md }}>
-          {profile.name}
-        </AppText>
+        <Pressable accessibilityRole="button" accessibilityHint="Switch or add profiles" onPress={() => router.push('/profiles')} style={{ marginTop: -spacing.md }}>
+          <AppText variant="label" tone="muted">
+            {profile.name} ▾
+          </AppText>
+        </Pressable>
       ) : null}
       <SyncIndicator />
 
@@ -131,7 +141,28 @@ export default function HomeScreen() {
             <MoneyText amountMinor={thisMonth.expenseMinor} currency={baseCurrency} variant="heading" tone="expense" />
           </View>
         </View>
+        <AppText variant="caption" tone="muted">
+          Today: <MoneyText amountMinor={today.expenseMinor} currency={baseCurrency} variant="caption" tone="muted" /> spent
+          {today.incomeMinor ? (
+            <>
+              {', '}
+              <MoneyText amountMinor={today.incomeMinor} currency={baseCurrency} variant="caption" tone="muted" /> in
+            </>
+          ) : null}
+        </AppText>
       </Card>
+
+      {notesDue.length ? (
+        <Card>
+          <View style={styles.between}>
+            <AppText variant="heading">Notes</AppText>
+            <Button title="All notes" variant="ghost" onPress={() => router.push('/notes')} style={styles.inlineButton} />
+          </View>
+          {notesDue.map((n) => (
+            <ListRow key={n.uuid} title={n.body} subtitle={dayLabel(new Date(n.dueAt!))} onPress={() => router.push('/notes')} />
+          ))}
+        </Card>
+      ) : null}
 
       {insights?.slice(0, 2).map((insight) => (
         <Card key={insight.uuid}>
