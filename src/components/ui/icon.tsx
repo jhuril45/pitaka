@@ -17,6 +17,8 @@ const ICONS = {
   syncing: { ios: 'arrow.triangle.2.circlepath', android: 'sync', web: 'sync' },
   error: { ios: 'exclamationmark.triangle', android: 'error', web: 'error' },
   back: { ios: 'chevron.left', android: 'arrow_back_ios_new', web: 'arrow_back_ios_new' },
+  chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
+  chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
   eye: { ios: 'eye', android: 'visibility', web: 'visibility' },
   eyeOff: { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' },
   check: { ios: 'checkmark', android: 'check', web: 'check' },

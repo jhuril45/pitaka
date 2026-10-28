@@ -11,6 +11,7 @@ import { useAccounts } from '@/data/repos/accounts';
 import { useCategories } from '@/data/repos/categories';
 import { saveTransaction } from '@/data/repos/transactions';
 import { prepareImage, queueAttachment, type PreparedImage } from '@/features/attachments/attachments';
+import { announceSaved } from '@/features/feedback/announce';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
 import { categoryByKeywords } from '@/lib/parser/categories';
 import { parseReceipt, type ReceiptGuess } from '@/lib/ocr/receipt';
@@ -60,6 +61,7 @@ export default function ScanReceiptScreen() {
     const tx = await saveTransaction({ ...values, profileUuid, source: 'ocr', recurringRuleUuid: null, installmentUuid: null });
     await queueAttachment({ profileUuid, transactionUuid: tx.uuid, base64: step.image.base64, ocrText: step.text });
     void syncNow('receipt');
+    void announceSaved(tx);
     router.back();
   }
 

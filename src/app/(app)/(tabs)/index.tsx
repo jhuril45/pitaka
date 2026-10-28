@@ -12,6 +12,7 @@ import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
+import { dismissInsight, useUnreadInsights } from '@/data/repos/insights';
 import { useObligations } from '@/data/repos/obligations';
 import { useBudgets } from '@/data/repos/plans';
 import { listProfiles } from '@/data/repos/profiles';
@@ -59,6 +60,7 @@ export default function HomeScreen() {
     [budgets, transactions, categories],
   );
   const { data: obligations } = useObligations(profileUuid);
+  const { data: insights } = useUnreadInsights(profileUuid);
   const upcoming = useMemo(() => (obligations ? dueSoon(obligations) : []), [obligations]);
 
   return (
@@ -92,9 +94,12 @@ export default function HomeScreen() {
       </Card>
 
       <Card>
-        <AppText variant="label" tone="muted">
-          {format(new Date(), 'MMMM')}
-        </AppText>
+        <View style={styles.between}>
+          <AppText variant="label" tone="muted">
+            {format(new Date(), 'MMMM')}
+          </AppText>
+          <Button title="Statistics" variant="ghost" onPress={() => router.push('/statistics')} style={styles.inlineButton} />
+        </View>
         <View style={[styles.between, { gap: spacing.md }]}>
           <View style={styles.flex}>
             <AppText variant="caption" tone="muted">
@@ -110,6 +115,16 @@ export default function HomeScreen() {
           </View>
         </View>
       </Card>
+
+      {insights?.slice(0, 2).map((insight) => (
+        <Card key={insight.uuid}>
+          <AppText variant="label" tone="muted">
+            {insight.kind === 'weekly_summary' ? 'Your week' : 'Worth a look'}
+          </AppText>
+          <AppText>{insight.message}</AppText>
+          <Button title="Got it" variant="ghost" onPress={() => void dismissInsight(insight)} style={[styles.inlineButton, styles.end]} />
+        </Card>
+      ))}
 
       {upcoming.length ? (
         <Card>
@@ -177,4 +192,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   inlineButton: { minHeight: 36, paddingHorizontal: 8 },
+  end: { alignSelf: 'flex-end' },
 });

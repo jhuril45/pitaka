@@ -14,6 +14,7 @@ import { learnMerchantCategory, listMerchantMappings } from '@/data/repos/mercha
 import { recordDebtPayment, useObligations } from '@/data/repos/obligations';
 import { saveTransaction } from '@/data/repos/transactions';
 import { useLocalQuery } from '@/data/use-local-query';
+import { announceSaved } from '@/features/feedback/announce';
 import { useSmartParse } from '@/features/smart-entry/use-smart-parse';
 import { useVoiceInput } from '@/features/voice/use-voice-input';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
@@ -71,7 +72,7 @@ export default function SmartAddScreen() {
   const ready = !!parsed && parsed.amountMinor !== null && !!parsed.accountUuid;
 
   async function onSubmit(values: TransactionFormResult) {
-    await saveTransaction({
+    const saved = await saveTransaction({
       ...values,
       profileUuid,
       source: usedVoice ? 'voice' : 'manual',
@@ -82,6 +83,7 @@ export default function SmartAddScreen() {
     if (values.type !== 'transfer' && values.merchant && values.categoryUuid && values.categoryUuid !== parsed?.categoryUuid) {
       await learnMerchantCategory(profileUuid, values.merchant, values.categoryUuid);
     }
+    void announceSaved(saved);
     router.back();
   }
 

@@ -96,3 +96,13 @@ export interface CategorySuggestion {
 export function suggestCategory(merchant: string): Promise<CategorySuggestion | null> {
   return Parse.Cloud.run('suggestCategory', { merchant });
 }
+
+/** Dismiss an insight on every device. */
+export function markInsightRead(uuid: string): Promise<{ ok: boolean }> {
+  return Parse.Cloud.run('markInsightRead', { uuid });
+}
+
+/** Recompute this account's monthly summaries on the server (e.g. after an import). */
+export function rebuildSummaries(profileUuid?: string): Promise<{ months: number; rows: number }> {
+  return Parse.Cloud.run('rebuildSummaries', profileUuid ? { profileUuid } : {});
+}

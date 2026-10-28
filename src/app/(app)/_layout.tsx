@@ -6,6 +6,7 @@ import { AppText } from '@/components/ui/text';
 import { useProfileSetup } from '@/data/repos/use-profile-setup';
 // Registers the receipt uploader with the sync engine.
 import '@/features/attachments/attachments';
+import { Toast } from '@/features/feedback/toast';
 import { useChores } from '@/features/reminders/use-chores';
 import { useSyncTriggers } from '@/sync/use-sync-triggers';
 import { useTheme } from '@/theme';
@@ -37,27 +38,33 @@ function SignedInStack({ profileUuid }: { profileUuid: string }) {
   useChores(profileUuid);
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="quick-add" options={{ presentation: 'modal', headerShown: true, title: 'Quick add' }} />
-      <Stack.Screen name="smart-add" options={{ presentation: 'modal', headerShown: true, title: 'Smart entry' }} />
-      <Stack.Screen name="scan-receipt" options={{ presentation: 'modal', headerShown: true, title: 'Scan receipt' }} />
-      <Stack.Screen name="transaction/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Transaction' }} />
-      <Stack.Screen name="accounts/index" options={{ headerShown: true, title: 'Accounts' }} />
-      <Stack.Screen name="accounts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Account' }} />
-      <Stack.Screen name="categories/index" options={{ headerShown: true, title: 'Categories' }} />
-      <Stack.Screen name="categories/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Category' }} />
-      <Stack.Screen name="budgets/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Budget' }} />
-      <Stack.Screen name="goals/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Goal' }} />
-      <Stack.Screen name="debts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Debt' }} />
-      <Stack.Screen name="installments/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Installment' }} />
-      <Stack.Screen name="recurring/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Recurring' }} />
-      <Stack.Screen name="forecast" options={{ headerShown: true, title: 'Cashflow forecast' }} />
-      <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
-    </Stack>
+    <View style={styles.flex}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="quick-add" options={{ presentation: 'modal', headerShown: true, title: 'Quick add' }} />
+        <Stack.Screen name="smart-add" options={{ presentation: 'modal', headerShown: true, title: 'Smart entry' }} />
+        <Stack.Screen name="scan-receipt" options={{ presentation: 'modal', headerShown: true, title: 'Scan receipt' }} />
+        <Stack.Screen name="transaction/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Transaction' }} />
+        <Stack.Screen name="accounts/index" options={{ headerShown: true, title: 'Accounts' }} />
+        <Stack.Screen name="accounts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Account' }} />
+        <Stack.Screen name="categories/index" options={{ headerShown: true, title: 'Categories' }} />
+        <Stack.Screen name="categories/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Category' }} />
+        <Stack.Screen name="budgets/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Budget' }} />
+        <Stack.Screen name="goals/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Goal' }} />
+        <Stack.Screen name="debts/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Debt' }} />
+        <Stack.Screen name="installments/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Installment' }} />
+        <Stack.Screen name="recurring/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Recurring' }} />
+        <Stack.Screen name="forecast" options={{ headerShown: true, title: 'Cashflow forecast' }} />
+        <Stack.Screen name="statistics" options={{ headerShown: true, title: 'Statistics' }} />
+        <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
+      </Stack>
+      {/* Feedback after saving, above every screen. */}
+      <Toast />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   setup: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 });

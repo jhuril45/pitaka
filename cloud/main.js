@@ -19,6 +19,10 @@
  *                   registered for push. It never creates transactions (the
  *                   app records due items itself, offline). Set the env var
  *                   EXPO_ACCESS_TOKEN only if Expo push security is enabled.
+ *   5. generateInsights: schedule it weekly, Mondays 00:30 UTC. Writes last
+ *                   week's Insight rows (stable ids; safe to re-run).
+ *   6. rebuildAllSummaries (once, optional): recompute every MonthlySummary,
+ *                   e.g. for transactions synced before summaries existed.
  *
  * Security model
  *   - User-data classes: clients may only READ their own rows (pointer
@@ -888,9 +892,11 @@ async function syncPush(request) {
       }
       const object = current || new Parse.Object(className);
       if (!current) object.set('owner', user);
+      // A transaction's old month needs its summary refreshed too.
+      const oldKey = className === 'Transaction' && current ? summaryKeyOf(current.get('profileUuid'), current.get('occurredAt')) : null;
       try {
         applyRecord(className, object, entry.record);
-        pending.push({ className: className, uuid: uuid, object: object });
+        pending.push({ className: className, uuid: uuid, object: object, oldKey: oldKey });
       } catch (e) {
         rejected.push({ className: className, uuid: uuid, error: e.message });
       }
@@ -935,6 +941,16 @@ async function syncPush(request) {
       serverUpdatedAt: stamp instanceof Date ? stamp.toISOString() : null,
     });
   });
+
+  // Keep MonthlySummary in step with the transactions just saved.
+  const summaryKeys = {};
+  pending.forEach(function (p) {
+    if (!p.saved || p.className !== 'Transaction') return;
+    if (p.oldKey) summaryKeys[p.oldKey] = true;
+    const key = summaryKeyOf(p.object.get('profileUuid'), p.object.get('occurredAt'));
+    if (key) summaryKeys[key] = true;
+  });
+  await refreshSummaryKeys(user, summaryKeys);
 
   return { accepted: accepted, conflicts: conflicts, rejected: rejected, serverTime: new Date().toISOString() };
 }
@@ -1563,6 +1579,461 @@ async function processRecurring(request) {
 
 Parse.Cloud.job('processRecurring', processRecurring);
 
+// ================================================================ summaries & insights
+
+/** Stable uuid from a seed (SHA-256, v4 layout), so re-runs update the same row. */
+function seededUuid(seed) {
+  const hex = nodeCrypto.createHash('sha256').update('pitaka:' + seed).digest('hex');
+  const variant = ((parseInt(hex.charAt(16), 16) & 0x3) | 0x8).toString(16);
+  return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-' + variant + hex.slice(17, 20) + '-' + hex.slice(20, 32);
+}
+
+/** Manila calendar month of an instant, "YYYY-MM". */
+function manilaMonth(value) {
+  return manilaDay(value).toISOString().slice(0, 7);
+}
+
+/** [start, end) instants of a Manila calendar month. */
+function monthRange(month) {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7)) - 1;
+  return { start: new Date(Date.UTC(y, m, 1) - MANILA_OFFSET_MS), end: new Date(Date.UTC(y, m + 1, 1) - MANILA_OFFSET_MS) };
+}
+
+/**
+ * Sum transactions into (account, category) buckets. Expenses and income add
+ * to their totals; transfers and adjustments only count as transactions.
+ * Uncategorised rows and transfers go in the null-category bucket.
+ */
+function summarize(transactions) {
+  const buckets = {};
+  transactions.forEach(function (tx) {
+    if (tx.deletedAt || !tx.accountUuid) return;
+    const categoryUuid = tx.type === 'expense' || tx.type === 'income' ? tx.categoryUuid || null : null;
+    const key = tx.accountUuid + '|' + (categoryUuid || '');
+    const b = (buckets[key] = buckets[key] || { accountUuid: tx.accountUuid, categoryUuid: categoryUuid, incomeMinor: 0, expenseMinor: 0, txCount: 0 });
+    if (tx.type === 'income') b.incomeMinor += tx.amountMinor;
+    if (tx.type === 'expense') b.expenseMinor += tx.amountMinor;
+    b.txCount += 1;
+  });
+  return Object.keys(buckets).map(function (k) {
+    return buckets[k];
+  });
+}
+
+/** Recompute one profile-month of MonthlySummary rows from its transactions. Returns rows written. */
+async function refreshSummaries(owner, profileUuid, month) {
+  const range = monthRange(month);
+  const txs = plain(
+    await findAll('Transaction', function (q) {
+      q.equalTo('owner', owner);
+      q.equalTo('profileUuid', profileUuid);
+      q.greaterThanOrEqualTo('occurredAt', range.start);
+      q.lessThan('occurredAt', range.end);
+    }),
+  );
+  const buckets = summarize(txs);
+  const existingQuery = new Parse.Query('MonthlySummary');
+  existingQuery.equalTo('owner', owner);
+  existingQuery.equalTo('profileUuid', profileUuid);
+  existingQuery.equalTo('month', month);
+  existingQuery.limit(1000);
+  const existing = {};
+  (await existingQuery.find(MASTER)).forEach(function (row) {
+    existing[row.get('uuid')] = row;
+  });
+
+  const toSave = [];
+  const seen = {};
+  buckets.forEach(function (b) {
+    const uuid = seededUuid(['summary', owner.id, profileUuid, month, b.accountUuid, b.categoryUuid || '-'].join(':'));
+    seen[uuid] = true;
+    const row = existing[uuid] || new Parse.Object('MonthlySummary');
+    if (
+      existing[uuid] &&
+      row.get('incomeMinor') === b.incomeMinor &&
+      row.get('expenseMinor') === b.expenseMinor &&
+      row.get('txCount') === b.txCount
+    ) {
+      return;
+    }
+    row.set({ uuid: uuid, owner: owner, profileUuid: profileUuid, month: month, accountUuid: b.accountUuid, categoryUuid: b.categoryUuid });
+    row.set({ incomeMinor: b.incomeMinor, expenseMinor: b.expenseMinor, txCount: b.txCount });
+    toSave.push(row);
+  });
+  // Buckets that emptied out are zeroed (kept, so the zero syncs to the phones).
+  Object.keys(existing).forEach(function (uuid) {
+    const row = existing[uuid];
+    if (seen[uuid] || row.get('txCount') === 0) return;
+    row.set({ incomeMinor: 0, expenseMinor: 0, txCount: 0 });
+    toSave.push(row);
+  });
+  if (toSave.length) await Parse.Object.saveAll(toSave, MASTER);
+  return toSave.length;
+}
+
+/** Refresh every (profile, month) in `keys` ("profileUuid|YYYY-MM"); errors are logged, not thrown. */
+async function refreshSummaryKeys(owner, keys) {
+  const list = Object.keys(keys);
+  for (let i = 0; i < list.length; i += 1) {
+    const parts = list[i].split('|');
+    try {
+      await refreshSummaries(owner, parts[0], parts[1]);
+    } catch (e) {
+      console.error('refreshSummaries failed for ' + list[i] + ': ' + (e && e.message));
+    }
+  }
+}
+
+/** Monthly summary key of a transaction (record or Parse object), or null. */
+function summaryKeyOf(profileUuid, occurredAt) {
+  if (!isUuid(profileUuid) || !occurredAt) return null;
+  const date = new Date(occurredAt);
+  if (isNaN(date.getTime())) return null;
+  return profileUuid + '|' + manilaMonth(date);
+}
+
+/**
+ * rebuildSummaries({ profileUuid? }) → { months, rows }
+ * Recompute the caller's MonthlySummary rows from scratch (e.g. after an import).
+ */
+async function rebuildSummaries(request) {
+  const user = requireUser(request);
+  const profileUuid = request.params && request.params.profileUuid;
+  if (profileUuid !== undefined && profileUuid !== null && !isUuid(profileUuid)) throw invalid('profileUuid must be a uuid.');
+  const txs = await findAll('Transaction', function (q) {
+    q.equalTo('owner', user);
+    if (profileUuid) q.equalTo('profileUuid', profileUuid);
+    q.select('profileUuid', 'occurredAt');
+  });
+  const keys = {};
+  txs.forEach(function (tx) {
+    const key = summaryKeyOf(tx.get('profileUuid'), tx.get('occurredAt'));
+    if (key) keys[key] = true;
+  });
+  // Months that only have summaries left (all their transactions deleted).
+  const old = new Parse.Query('MonthlySummary');
+  old.equalTo('owner', user);
+  if (profileUuid) old.equalTo('profileUuid', profileUuid);
+  old.greaterThan('txCount', 0);
+  old.select('profileUuid', 'month');
+  old.limit(10000);
+  (await old.find(MASTER)).forEach(function (row) {
+    keys[row.get('profileUuid') + '|' + row.get('month')] = true;
+  });
+  let rows = 0;
+  const list = Object.keys(keys);
+  for (let i = 0; i < list.length; i += 1) {
+    const parts = list[i].split('|');
+    rows += await refreshSummaries(user, parts[0], parts[1]);
+  }
+  return { months: list.length, rows: rows };
+}
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * getStatistics({ profileUuid, fromMonth, toMonth }) → { months, categories, totals }
+ * Totals from MonthlySummary for any range (e.g. years older than the phone keeps).
+ */
+async function getStatistics(request) {
+  const user = requireUser(request);
+  const params = request.params || {};
+  if (!isUuid(params.profileUuid)) throw invalid('profileUuid must be a uuid.');
+  if (!MONTH_PATTERN.test(String(params.fromMonth)) || !MONTH_PATTERN.test(String(params.toMonth))) throw invalid('fromMonth and toMonth are YYYY-MM.');
+  if (params.fromMonth > params.toMonth) throw invalid('fromMonth is after toMonth.');
+  const rows = await findAllRows('MonthlySummary', function (q) {
+    q.equalTo('owner', user);
+    q.equalTo('profileUuid', params.profileUuid);
+    q.greaterThanOrEqualTo('month', params.fromMonth);
+    q.lessThanOrEqualTo('month', params.toMonth);
+  });
+  const months = {};
+  const categories = {};
+  const totals = { incomeMinor: 0, expenseMinor: 0, txCount: 0 };
+  rows.forEach(function (row) {
+    const month = row.get('month');
+    const m = (months[month] = months[month] || { month: month, incomeMinor: 0, expenseMinor: 0, txCount: 0 });
+    const key = row.get('categoryUuid') || '';
+    const c = (categories[key] = categories[key] || { categoryUuid: row.get('categoryUuid') || null, incomeMinor: 0, expenseMinor: 0, txCount: 0 });
+    [m, c, totals].forEach(function (t) {
+      t.incomeMinor += row.get('incomeMinor') || 0;
+      t.expenseMinor += row.get('expenseMinor') || 0;
+      t.txCount += row.get('txCount') || 0;
+    });
+  });
+  return {
+    months: Object.keys(months)
+      .sort()
+      .map(function (k) {
+        return months[k];
+      }),
+    categories: Object.keys(categories)
+      .map(function (k) {
+        return categories[k];
+      })
+      .filter(function (c) {
+        return c.txCount > 0;
+      })
+      .sort(function (a, b) {
+        return b.expenseMinor - a.expenseMinor;
+      }),
+    totals: totals,
+  };
+}
+
+/** Like findAll, for classes without deletedAt. */
+async function findAllRows(className, configure) {
+  const rows = [];
+  for (let skip = 0; ; skip += PAGE) {
+    const query = new Parse.Query(className);
+    configure(query);
+    query.ascending('objectId');
+    query.skip(skip);
+    query.limit(PAGE);
+    const page = await query.find(MASTER);
+    rows.push.apply(rows, page);
+    if (page.length < PAGE) return rows;
+  }
+}
+
+/** Monday (Manila) of the week containing `now`, as a UTC-midnight day. */
+function weekStart(now) {
+  const day = manilaDay(now);
+  const weekday = (day.getUTCDay() + 6) % 7; // Monday = 0
+  return addDaysUtc(day, -weekday);
+}
+
+function pctChange(now, usual) {
+  return Math.round(((now - usual) * 100) / usual);
+}
+
+/**
+ * Weekly insights for one profile from plain transactions (last 5 weeks) and
+ * category names. "This week" is the last full Monday–Sunday week before
+ * `now`; "usual" is the average of the four weeks before it. Pure.
+ */
+function computeInsights(transactions, categoryNames, now) {
+  const thisWeek = addDaysUtc(weekStart(now), -7);
+  const nextWeek = addDaysUtc(thisWeek, 7);
+  const usualFrom = addDaysUtc(thisWeek, -28);
+  const expenses = transactions.filter(function (tx) {
+    return !tx.deletedAt && tx.type === 'expense';
+  });
+  const inWeek = [];
+  const before = [];
+  expenses.forEach(function (tx) {
+    const day = manilaDay(tx.occurredAt);
+    if (day >= thisWeek && day < nextWeek) inWeek.push(tx);
+    else if (day >= usualFrom && day < thisWeek) before.push(tx);
+  });
+  const out = [];
+  const total = function (list) {
+    return list.reduce(function (s, tx) {
+      return s + tx.amountMinor;
+    }, 0);
+  };
+  const weekTotal = total(inWeek);
+  const usualTotal = Math.round(total(before) / 4);
+  const periodStart = new Date(thisWeek.getTime() - MANILA_OFFSET_MS).toISOString();
+  if (inWeek.length && before.length) {
+    const change = usualTotal > 0 ? pctChange(weekTotal, usualTotal) : 0;
+    out.push({
+      kind: 'weekly_summary',
+      key: 'week',
+      message:
+        'Last week you spent ' +
+        pesos(weekTotal) +
+        (Math.abs(change) < 5 ? ', about your usual.' : ', ' + Math.abs(change) + '% ' + (change > 0 ? 'more' : 'less') + ' than your usual ' + pesos(usualTotal) + '.'),
+      payload: { weekMinor: weekTotal, usualMinor: usualTotal },
+      periodStart: periodStart,
+    });
+  }
+
+  // The category with the biggest jump (at least +30% and ₱500 over usual).
+  const byCategory = function (list) {
+    const sums = {};
+    list.forEach(function (tx) {
+      if (tx.categoryUuid) sums[tx.categoryUuid] = (sums[tx.categoryUuid] || 0) + tx.amountMinor;
+    });
+    return sums;
+  };
+  const weekByCat = byCategory(inWeek);
+  const beforeByCat = byCategory(before);
+  let best = null;
+  Object.keys(weekByCat).forEach(function (uuid) {
+    const usual = Math.round((beforeByCat[uuid] || 0) / 4);
+    const diff = weekByCat[uuid] - usual;
+    if (usual <= 0 || diff < 50000 || weekByCat[uuid] * 10 < usual * 13) return;
+    if (!best || diff > best.diff) best = { uuid: uuid, diff: diff, week: weekByCat[uuid], usual: usual };
+  });
+  if (best && categoryNames[best.uuid]) {
+    out.push({
+      kind: 'category_change',
+      key: best.uuid,
+      message:
+        categoryNames[best.uuid] + ' spending was up ' + pctChange(best.week, best.usual) + '% last week (' + pesos(best.week) + ' vs. your usual ' + pesos(best.usual) + ').',
+      payload: { categoryUuid: best.uuid, weekMinor: best.week, usualMinor: best.usual },
+      periodStart: periodStart,
+    });
+  }
+
+  // One unusually large expense: at least ₱1,000 and 3× the category's typical (median) expense.
+  let unusual = null;
+  inWeek.forEach(function (tx) {
+    if (!tx.categoryUuid || tx.amountMinor < 100000) return;
+    const past = before
+      .filter(function (p) {
+        return p.categoryUuid === tx.categoryUuid;
+      })
+      .map(function (p) {
+        return p.amountMinor;
+      })
+      .sort(function (a, b) {
+        return a - b;
+      });
+    if (past.length < 3) return;
+    const median = past[Math.floor(past.length / 2)];
+    if (tx.amountMinor >= median * 3 && (!unusual || tx.amountMinor > unusual.tx.amountMinor)) unusual = { tx: tx, median: median };
+  });
+  if (unusual && categoryNames[unusual.tx.categoryUuid]) {
+    const tx = unusual.tx;
+    out.push({
+      kind: 'unusual_transaction',
+      key: tx.uuid,
+      message:
+        pesos(tx.amountMinor) +
+        (tx.merchant ? ' at ' + tx.merchant : '') +
+        ' was much more than your usual ' +
+        categoryNames[tx.categoryUuid] +
+        ' expense (' +
+        pesos(unusual.median) +
+        ').',
+      payload: { transactionUuid: tx.uuid, amountMinor: tx.amountMinor, typicalMinor: unusual.median },
+      periodStart: periodStart,
+    });
+  }
+  return out;
+}
+
+/**
+ * generateInsights (weekly job, e.g. Mondays 00:30 UTC): for every profile
+ * with spending in the last five weeks, write Insight rows for last week.
+ * Rows have stable ids, so a re-run doesn't duplicate or un-read them.
+ */
+async function generateInsights(request) {
+  const params = request.params || {};
+  const now = params.now ? new Date(params.now) : new Date();
+  const since = new Date(addDaysUtc(weekStart(now), -35).getTime() - MANILA_OFFSET_MS);
+  const txs = await findAll('Transaction', function (q) {
+    q.greaterThanOrEqualTo('occurredAt', since);
+    q.equalTo('type', 'expense');
+  });
+  const groups = {};
+  txs.forEach(function (tx) {
+    const ownerId = pointerId(tx.get('owner'));
+    if (!ownerId) return;
+    const key = ownerId + '|' + tx.get('profileUuid');
+    (groups[key] = groups[key] || []).push(tx);
+  });
+
+  let written = 0;
+  const keys = Object.keys(groups);
+  for (let i = 0; i < keys.length; i += 1) {
+    const parts = keys[i].split('|');
+    const owner = Parse.User.createWithoutData(parts[0]);
+    const rows = plain(groups[keys[i]]);
+    const categoryUuids = {};
+    rows.forEach(function (r) {
+      if (r.categoryUuid) categoryUuids[r.categoryUuid] = true;
+    });
+    const names = {};
+    if (Object.keys(categoryUuids).length) {
+      const cq = new Parse.Query('Category');
+      cq.equalTo('owner', owner);
+      cq.containedIn('uuid', Object.keys(categoryUuids));
+      cq.limit(1000);
+      (await cq.find(MASTER)).forEach(function (c) {
+        names[c.get('uuid')] = c.get('name');
+      });
+    }
+    const insights = computeInsights(rows, names, now);
+    if (!insights.length) continue;
+    const uuids = insights.map(function (ins) {
+      return seededUuid(['insight', parts[0], parts[1], ins.periodStart, ins.kind, ins.key].join(':'));
+    });
+    const eq = new Parse.Query('Insight');
+    eq.containedIn('uuid', uuids);
+    eq.limit(100);
+    const existing = {};
+    (await eq.find(MASTER)).forEach(function (row) {
+      existing[row.get('uuid')] = true;
+    });
+    const toSave = [];
+    insights.forEach(function (ins, index) {
+      if (existing[uuids[index]]) return;
+      const row = new Parse.Object('Insight');
+      row.set({
+        uuid: uuids[index],
+        owner: owner,
+        profileUuid: parts[1],
+        kind: ins.kind,
+        message: ins.message,
+        payload: ins.payload,
+        periodStart: new Date(ins.periodStart),
+        readAt: null,
+      });
+      toSave.push(row);
+    });
+    if (toSave.length) await Parse.Object.saveAll(toSave, MASTER);
+    written += toSave.length;
+  }
+  const summary = 'generateInsights done: ' + keys.length + ' profiles checked, ' + written + ' insights written';
+  if (request.message) request.message(summary);
+  return summary;
+}
+
+/** markInsightRead({ uuid }) → { ok } — dismiss an insight on every device. */
+async function markInsightRead(request) {
+  const user = requireUser(request);
+  const uuid = request.params && request.params.uuid;
+  if (!isUuid(uuid)) throw invalid('uuid must be a uuid.');
+  const query = new Parse.Query('Insight');
+  query.equalTo('owner', user);
+  query.equalTo('uuid', uuid);
+  const row = await query.first(MASTER);
+  if (!row) throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Insight not found.');
+  if (!row.get('readAt')) {
+    row.set('readAt', new Date());
+    await row.save(null, MASTER);
+  }
+  return { ok: true };
+}
+
+Parse.Cloud.define('rebuildSummaries', rebuildSummaries);
+Parse.Cloud.define('getStatistics', getStatistics);
+Parse.Cloud.define('markInsightRead', markInsightRead);
+Parse.Cloud.job('generateInsights', generateInsights);
+Parse.Cloud.job('rebuildAllSummaries', async function (request) {
+  const txs = await findAll('Transaction', function (q) {
+    q.select('owner', 'profileUuid', 'occurredAt');
+  });
+  const byOwner = {};
+  txs.forEach(function (tx) {
+    const ownerId = pointerId(tx.get('owner'));
+    const key = summaryKeyOf(tx.get('profileUuid'), tx.get('occurredAt'));
+    if (ownerId && key) (byOwner[ownerId] = byOwner[ownerId] || {})[key] = true;
+  });
+  const owners = Object.keys(byOwner);
+  for (let i = 0; i < owners.length; i += 1) {
+    await refreshSummaryKeys(Parse.User.createWithoutData(owners[i]), byOwner[owners[i]]);
+    request.message('(' + (i + 1) + '/' + owners.length + ') users done');
+  }
+  const summary = 'rebuildAllSummaries done: ' + owners.length + ' users';
+  request.message(summary);
+  return summary;
+});
+
 // ================================================================ test hooks
 // Ignored by Back4App; lets the Jest tests inspect the definitions above.
 if (typeof module !== 'undefined' && module.exports) {
@@ -1588,5 +2059,9 @@ if (typeof module !== 'undefined' && module.exports) {
     manilaDay: manilaDay,
     remindersFor: remindersFor,
     processRecurring: processRecurring,
+    summarize: summarize,
+    seededUuid: seededUuid,
+    monthRange: monthRange,
+    computeInsights: computeInsights,
   };
 }

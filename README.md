@@ -473,10 +473,29 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
   the affordability check and the list of coming items.
 - Tested: `forecast.test.ts` (8 cases); checked on the emulator.
 
+## Milestone 10: Aggregates & insights ✅ (server parts need the redeploy)
+
+- **MonthlySummary** (server): after every `syncPush`, the touched (profile, month) buckets —
+  per account and category, Manila months — are recomputed from that month's transactions, so
+  edits, moves between months and deletes stay exact. Stable ids; emptied buckets are zeroed.
+  `rebuildSummaries` (function, own data) and `rebuildAllSummaries` (job) recompute from scratch.
+- **getStatistics** (function): month and category totals for any range from summaries.
+- **Statistics screen** (Home → Statistics): month view with ‹ › navigation (36 months back;
+  months older than the phone's 12 come from synced summaries), income / spent / saved, donut by
+  top-level category (spending or income) with shares; 12-month income-vs-spending bars.
+- **Instant feedback after saving** (on device): a toast such as "That's 72% of your Food budget,
+  with 12 days left", "You're ₱200.00 over…", or "Your biggest expense this month."
+- **generateInsights** (weekly job): last Monday–Sunday vs. the four weeks before — weekly total,
+  biggest category jump (≥ 30% and ≥ ₱500), one unusually large expense (≥ ₱1,000 and 3× the
+  category's median). Shown on Home with "Got it" (`markInsightRead` syncs the dismissal).
+- Tested: `cloud-summaries.test.ts`, `statistics.test.ts`; Statistics and the feedback toast
+  checked on the emulator.
+
 ---
 
 ## Where we stopped
 1. **Redeploy `cloud/main.js`** (Cloud Code → Deploy), then run **setupSchema** once (adds
-   `ReminderLog`). Schedule **processRecurring** daily at 01:00 UTC. After the redeploy, use
+   `ReminderLog`). Schedule **processRecurring** daily at 01:00 UTC and **generateInsights**
+   weekly (Mondays 00:30 UTC); run **rebuildAllSummaries** once. After the redeploy, use
    More → Sync issues → Retry for any refused receipt photo.
 2. Run `npm run test:integration` against the dev app.

@@ -9,6 +9,7 @@ import { useAccounts } from '@/data/repos/accounts';
 import { useCategories } from '@/data/repos/categories';
 import { getTransaction, removeTransaction, saveTransaction } from '@/data/repos/transactions';
 import { AttachmentStrip } from '@/features/attachments/attachment-strip';
+import { announceSaved } from '@/features/feedback/announce';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
 import { confirm } from '@/lib/confirm';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
@@ -38,7 +39,7 @@ export default function TransactionScreen() {
   }
 
   async function onSubmit(values: TransactionFormResult) {
-    await saveTransaction({
+    const saved = await saveTransaction({
       ...(existing ?? {}),
       ...values,
       uuid: existing?.uuid,
@@ -47,6 +48,7 @@ export default function TransactionScreen() {
       recurringRuleUuid: existing?.recurringRuleUuid ?? null,
       installmentUuid: existing?.installmentUuid ?? null,
     });
+    if (isNew) void announceSaved(saved);
     router.back();
   }
 
