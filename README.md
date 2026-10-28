@@ -459,6 +459,20 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
   repayment (₱2,000 → ₱1,500 left), an installment whose first charge was recorded automatically;
   everything synced.
 
+## Milestone 9: Cashflow forecast + "Can I afford it?" ✅
+
+- `src/lib/forecast.ts` (on device, pure): starts from spendable money (cash, bank, e-wallet in the
+  base currency) and walks 30/60/90 days: recurring items on their dates (card payments count as
+  money out), installment charges, debts you owe (overdue → today; money owed to you is not
+  counted), plus average everyday spending from the last 90 days (at least 30 days of history;
+  recurring charges excluded). Auto-posted items due today aren't counted twice.
+- **Can I afford it?**: pay X on a day, then check the lowest balance from that day on: **yes**
+  (stays above the safety buffer), **tight** (above zero) or **not right now**. Default buffer: two
+  weeks of everyday spending, at least ₱1,000; editable.
+- Plan → Cashflow forecast: totals, lowest point, balance chart (`react-native-gifted-charts`),
+  the affordability check and the list of coming items.
+- Tested: `forecast.test.ts` (8 cases); checked on the emulator.
+
 ---
 
 ## Where we stopped

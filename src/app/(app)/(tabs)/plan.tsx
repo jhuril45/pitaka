@@ -42,6 +42,9 @@ export default function PlanScreen() {
 
   return (
     <Screen title="Plan">
+      <Card>
+        <ListRow title="Cashflow forecast" subtitle="Your balance for the next 30–90 days · Can I afford it?" onPress={() => router.push('/forecast')} />
+      </Card>
       <View style={styles.between}>
         <AppText variant="heading">Budgets</AppText>
         <Button title="Add" variant="ghost" onPress={() => router.push({ pathname: '/budgets/[id]', params: { id: 'new' } })} style={styles.inline} />
@@ -143,10 +146,7 @@ export default function PlanScreen() {
         })}
       </Card>
 
-      <Card style={{ marginTop: spacing.md }}>
-        <AppText variant="heading">More planning</AppText>
-        <ListRow title="Cashflow forecast" subtitle="Coming in Milestone 9" />
-      </Card>
+
     </Screen>
   );
 }
