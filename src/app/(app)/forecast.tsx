@@ -57,10 +57,10 @@ export default function ForecastScreen() {
   const bufferMinor = parseMoney(buffer) ?? defaultBufferMinor(forecast);
   const answer = priceMinor && priceMinor > 0 ? canAfford(forecast, priceMinor, bufferMinor, buyOn ?? undefined) : null;
 
-  // Chart in whole currency units (display only); one point every few days keeps it light.
+  // One point every few days keeps the chart light.
   const step = Math.max(1, Math.round(forecast.points.length / 30));
   const chartPoints = forecast.points.filter((_, i) => i % step === 0 || i === forecast.points.length - 1);
-  const values = chartPoints.map((p) => Math.round(p.balanceMinor / 100));
+  const values = chartPoints.map((p) => p.balanceMinor);
   const lowestValue = Math.min(0, ...values);
 
   return (
@@ -117,7 +117,7 @@ export default function ForecastScreen() {
               endOpacity={0.02}
               noOfSections={4}
               yAxisLabelWidth={48}
-              formatYLabel={(label) => formatCompact(Math.round(Number(label)) * 100, currency)}
+              formatYLabel={(label) => formatCompact(Math.round(Number(label)), currency)}
               mostNegativeValue={lowestValue < 0 ? lowestValue : undefined}
               yAxisTextStyle={{ color: colors.textMuted, fontSize: 10 }}
               xAxisColor={colors.border}
