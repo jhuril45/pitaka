@@ -4,6 +4,7 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import { AppText } from '@/components/ui/text';
+import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
 import { biometricsAvailable, getPinLength, isLockEnabled, unlockWithBiometrics, verifyPin } from './lock-settings';
@@ -83,6 +84,7 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
     setError(null);
     if (next.length < length) return;
     if (await verifyPin(next)) return onUnlock();
+    haptics.error();
     setError('Wrong PIN. Try again.');
     setPin('');
   }

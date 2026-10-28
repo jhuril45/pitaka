@@ -5,11 +5,13 @@ import { listCategories } from '@/data/repos/categories';
 import { listBudgets } from '@/data/repos/plans';
 import { listTransactions } from '@/data/repos/transactions';
 import { saveFeedback } from '@/lib/feedback';
+import { haptics } from '@/lib/haptics';
 
 import { useToastStore } from './toast';
 
 /** Show instant, on-device feedback for a newly saved transaction (best effort). */
 export async function announceSaved(tx: TransactionRecord): Promise<void> {
+  haptics.success();
   try {
     const [budgets, transactions, categories, profile] = await Promise.all([
       listBudgets(tx.profileUuid),

@@ -20,7 +20,8 @@ export function PickerSheet({ visible, title, onClose, children }: PickerSheetPr
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable accessibilityLabel="Close" style={styles.backdrop} onPress={onClose} />
+      {/* Tap outside to close; screen readers use the Close button in the header. */}
+      <Pressable accessible={false} importantForAccessibility="no" style={styles.backdrop} onPress={onClose} />
       <View
         style={[
           styles.sheet,

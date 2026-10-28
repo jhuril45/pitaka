@@ -2,8 +2,9 @@
 module.exports = {
   preset: 'jest-expo',
   roots: ['<rootDir>/__tests__'],
-  // helpers are shared code; integration tests hit the live dev app (npm run test:integration).
-  testPathIgnorePatterns: ['/node_modules/', '/__tests__/helpers/', '/__tests__/integration/'],
+  // helpers are shared code; integration tests hit the live dev app (npm run test:integration);
+  // benchmarks are slow and run on their own (npm run bench).
+  testPathIgnorePatterns: ['/node_modules/', '/__tests__/helpers/', '/__tests__/integration/', '/__tests__/bench/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',

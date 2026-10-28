@@ -76,6 +76,7 @@
     "check:safety": "node scripts/check-safety.js",
     "check": "npm run typecheck && npm run lint && npm test -- --ci && npm run check:safety",
     "test:integration": "jest -c jest.integration.config.js --runInBand",
+    "bench": "jest -c jest.bench.config.js --runInBand",
     "build:web": "expo export --platform web --output-dir dist"
   },
   "private": true,

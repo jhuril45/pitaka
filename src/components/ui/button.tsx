@@ -43,6 +43,8 @@ export function Button({ title, variant = 'primary', loading = false, disabled, 
       accessibilityRole="button"
       accessibilityState={{ disabled: !!isDisabled, busy: loading }}
       disabled={isDisabled}
+      // Compact inline buttons (e.g. "Add") still get a ~48pt touch target.
+      hitSlop={8}
       style={({ pressed }) => [
         styles.button,
         { backgroundColor: tint.background, borderRadius: radius.md, paddingHorizontal: spacing.lg },

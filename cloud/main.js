@@ -1165,12 +1165,63 @@ async function suggestCategory(request) {
   return row ? { suggestedCategoryKey: row.get('suggestedCategoryKey'), confidenceBps: row.get('confidenceBps') || 0 } : null;
 }
 
-Parse.Cloud.define('suggestCategory', suggestCategory);
-Parse.Cloud.define('registerDevice', registerDevice);
-Parse.Cloud.define('deleteAccount', deleteAccount);
-Parse.Cloud.define('syncPush', syncPush);
-Parse.Cloud.define('syncPull', syncPull);
-Parse.Cloud.define('bootstrap', bootstrap);
+// ================================================================ rate limits
+
+/**
+ * Per-user request limits for Cloud functions: [requests, window ms]. Kept in
+ * memory per server instance, so they're a guard against runaway clients and
+ * abuse, not exact quotas. Sized well above normal use (e.g. a first sync of
+ * 10k rows is ~35 pulls; deleting a big account is up to 50 calls).
+ */
+const RATE_LIMITS = {
+  syncPush: [60, 60000],
+  syncPull: [120, 60000],
+  bootstrap: [10, 60000],
+  suggestCategory: [60, 60000],
+  registerDevice: [10, 60000],
+  deleteAccount: [120, 60000],
+  rebuildSummaries: [3, 3600000],
+  getStatistics: [60, 60000],
+  markInsightRead: [60, 60000],
+  getPrices: [30, 60000],
+  getTransactionsPage: [60, 60000],
+};
+const MAX_TRACKED = 10000;
+const rateHits = new Map();
+
+function checkRateLimit(name, request, now) {
+  const limit = RATE_LIMITS[name];
+  if (!limit) return;
+  const who = (request.user && request.user.id) || request.ip || 'anonymous';
+  const key = name + ':' + who;
+  const since = now - limit[1];
+  const recent = (rateHits.get(key) || []).filter(function (t) {
+    return t > since;
+  });
+  if (recent.length >= limit[0]) {
+    throw new Parse.Error(Parse.Error.REQUEST_LIMIT_EXCEEDED, 'Too many requests. Please wait a moment and try again.');
+  }
+  recent.push(now);
+  rateHits.delete(key);
+  rateHits.set(key, recent);
+  // Forget the least recently used callers if the table grows too big.
+  while (rateHits.size > MAX_TRACKED) rateHits.delete(rateHits.keys().next().value);
+}
+
+/** A Cloud function wrapped with its rate limit. */
+function limited(name, fn) {
+  return async function (request) {
+    checkRateLimit(name, request, Date.now());
+    return fn(request);
+  };
+}
+
+Parse.Cloud.define('suggestCategory', limited('suggestCategory', suggestCategory));
+Parse.Cloud.define('registerDevice', limited('registerDevice', registerDevice));
+Parse.Cloud.define('deleteAccount', limited('deleteAccount', deleteAccount));
+Parse.Cloud.define('syncPush', limited('syncPush', syncPush));
+Parse.Cloud.define('syncPull', limited('syncPull', syncPull));
+Parse.Cloud.define('bootstrap', limited('bootstrap', bootstrap));
 
 // ================================================================ jobs
 
@@ -2038,9 +2089,9 @@ async function markInsightRead(request) {
   return { ok: true };
 }
 
-Parse.Cloud.define('rebuildSummaries', rebuildSummaries);
-Parse.Cloud.define('getStatistics', getStatistics);
-Parse.Cloud.define('markInsightRead', markInsightRead);
+Parse.Cloud.define('rebuildSummaries', limited('rebuildSummaries', rebuildSummaries));
+Parse.Cloud.define('getStatistics', limited('getStatistics', getStatistics));
+Parse.Cloud.define('markInsightRead', limited('markInsightRead', markInsightRead));
 Parse.Cloud.job('generateInsights', generateInsights);
 // ================================================================ investments (prices)
 
@@ -2266,7 +2317,7 @@ async function getPrices(request) {
   return { prices: prices };
 }
 
-Parse.Cloud.define('getPrices', getPrices);
+Parse.Cloud.define('getPrices', limited('getPrices', getPrices));
 Parse.Cloud.job('refreshPrices', refreshPrices);
 
 Parse.Cloud.job('rebuildAllSummaries', async function (request) {
@@ -2506,7 +2557,7 @@ async function upsertBy(className, field, rows) {
   return saved;
 }
 
-Parse.Cloud.define('getTransactionsPage', getTransactionsPage);
+Parse.Cloud.define('getTransactionsPage', limited('getTransactionsPage', getTransactionsPage));
 Parse.Cloud.job('cleanupDeleted', cleanupDeleted);
 Parse.Cloud.job('buildMerchantDictionary', buildMerchantDictionary);
 
@@ -2542,5 +2593,7 @@ if (typeof module !== 'undefined' && module.exports) {
     decimalToMinor: decimalToMinor,
     PRICE_PROVIDERS: PRICE_PROVIDERS,
     dictionaryFromVotes: dictionaryFromVotes,
+    checkRateLimit: checkRateLimit,
+    RATE_LIMITS: RATE_LIMITS,
   };
 }

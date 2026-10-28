@@ -58,16 +58,15 @@ type TxShape = Pick<TransactionRecord, 'type' | 'amountMinor' | 'categoryUuid' |
 export function spentIn(period: Period, covered: Set<string> | null, transactions: TxShape[]): number {
   const from = period.start.getTime();
   const to = period.end.getTime();
-  return sum(
-    transactions
-      .filter((tx) => !tx.deletedAt && tx.type === 'expense')
-      .filter((tx) => {
-        const t = Date.parse(tx.occurredAt);
-        return t >= from && t < to;
-      })
-      .filter((tx) => !covered || (tx.categoryUuid !== null && covered.has(tx.categoryUuid)))
-      .map((tx) => tx.amountMinor),
-  );
+  let total = 0;
+  for (const tx of transactions) {
+    // Cheap checks first; the date parse is the costly one.
+    if (tx.deletedAt || tx.type !== 'expense') continue;
+    if (covered && (tx.categoryUuid === null || !covered.has(tx.categoryUuid))) continue;
+    const t = Date.parse(tx.occurredAt);
+    if (t >= from && t < to) total = add(total, tx.amountMinor);
+  }
+  return total;
 }
 
 export type BudgetState = 'on-track' | 'warning' | 'over';
@@ -104,6 +103,10 @@ export function budgetStatus(
 ): BudgetStatus {
   const covered = coveredCategories(budget.categoryUuid, categories);
   const period = periodAt(budget, now);
+  // Rollover walks many periods: narrow to this budget's expenses once.
+  const relevant = transactions.filter(
+    (tx) => !tx.deletedAt && tx.type === 'expense' && (!covered || (tx.categoryUuid !== null && covered.has(tx.categoryUuid))),
+  );
 
   let carryMinor = 0;
   if (budget.rollover) {
@@ -114,11 +117,11 @@ export function budgetStatus(
       p = previousPeriod(budget, p);
     }
     for (const past of earlier) {
-      carryMinor = add(carryMinor, subtract(budget.amountMinor, spentIn(past, covered, transactions)));
+      carryMinor = add(carryMinor, subtract(budget.amountMinor, spentIn(past, covered, relevant)));
     }
   }
 
-  const spentMinor = spentIn(period, covered, transactions);
+  const spentMinor = spentIn(period, covered, relevant);
   const limitMinor = add(budget.amountMinor, carryMinor);
   const usedBps = limitMinor > 0 ? ratioBps(spentMinor, limitMinor) : spentMinor > 0 ? 10001 : 0;
   const totalDays = Math.max(1, differenceInCalendarDays(period.end, period.start));

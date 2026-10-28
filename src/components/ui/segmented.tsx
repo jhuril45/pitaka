@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
 interface SegmentedProps<T extends string> {
@@ -19,7 +20,10 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
             key={option.value}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (option.value !== value) haptics.select();
+              onChange(option.value);
+            }}
             style={[styles.item, { borderRadius: radius.md - 2 }, selected && { backgroundColor: colors.surface }]}>
             <Text style={[styles.label, { color: selected ? colors.primary : colors.textMuted }]}>{option.label}</Text>
           </Pressable>

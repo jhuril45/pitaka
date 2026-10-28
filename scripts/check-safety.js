@@ -67,7 +67,27 @@ scan(
   ],
 );
 
-// 3. Banned backends
+// 3. Request budget: the app never saves, deletes or queries Parse objects one by one.
+//    Writes go through the Outbox → syncPush (≤ 200 rows per request); reads come from the Local Datastore.
+scan(
+  APP_DIRS.flatMap(walk).filter((f) => /\.(ts|tsx)$/.test(f)),
+  [
+    {
+      pattern: /\.(save|saveAll|saveEventually|destroy|destroyAll|destroyEventually)\s*\(/,
+      message: 'Direct Parse write — queue it in the Outbox (saveRecord) instead',
+      // Receipt photos are uploaded as Parse Files (one request per photo, by design).
+      allow: (file) => file.endsWith(path.join('features', 'attachments', 'attachments.ts')),
+    },
+    {
+      pattern: /new Parse\.Query\(/,
+      message: 'Server query from the app — read the Local Datastore (fromPinWithName) instead',
+      // The diagnostics probe queries the Local Datastore only.
+      allow: (file) => file.endsWith(path.join('parse', 'self-check.ts')),
+    },
+  ],
+);
+
+// 4. Banned backends
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
 const banned = [

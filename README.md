@@ -531,6 +531,37 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
 - Tested: `backup.test.ts` (round trip, idempotent import, newer-local-wins, CSV), cloud tests for
   paging and the dictionary; notes, app lock (wrong/right PIN) and profiles checked on the emulator.
 
+## Milestone 13: Polish & hardening ✅
+
+- **10k-transaction benchmark** (`npm run bench`): real repositories and Local Datastore code,
+  in-memory store (a phone's SQLite is slower; the scoping is what matters). 10,000 transactions
+  over 12 months, ~730 this month:
+
+  | Operation | Time |
+  |---|---|
+  | store 10k (sync-pull batches of 300) | 1.7 s |
+  | list this month | 16 ms |
+  | list 12 months / search 12 months | 188 / 183 ms |
+  | balances | 22 ms |
+  | 5 budgets with rollover | 82 ms (was 605 ms; now pre-filters once instead of per period) |
+  | statistics: month breakdown / 12-month totals | 7 / 40 ms |
+  | forecast 90 days | 45 ms |
+  | save one transaction (validate, pin, outbox) | 5 ms |
+
+- **Request-count audit**: `request-audit.test.ts` — 450 changes made offline go up in exactly 3
+  `syncPush` requests (≤ 200 rows each). `check-safety` now fails on any direct Parse
+  save/destroy or server query in app code (the only exceptions: receipt-file upload, and the
+  Local-Datastore diagnostics probe).
+- **Rate limits**: every Cloud function has a per-user limit (e.g. syncPush 60/min, getPrices
+  30/min, rebuildSummaries 3/hour); over the limit returns REQUEST_LIMIT_EXCEEDED and the app's
+  sync retries with backoff. In-memory per server instance: a guard, not an exact quota.
+- **Haptics** (native only): success on saving a transaction, selection on segmented controls and
+  ticking notes, error on a wrong PIN.
+- **Accessibility**: every pressable has a role and label (checked by a scan); compact buttons
+  get a 48 pt touch target; picker backdrops are hidden from screen readers; live regions for
+  toasts, verdicts and PIN errors; locked content hidden from screen readers.
+- Empty states on every list; FlashList for transactions; icon/splash from the logo (earlier).
+
 ---
 
 ## Where we stopped

@@ -226,3 +226,24 @@ describe('function input checks', () => {
     await expect(functions.deleteAccount!({ params: {} })).rejects.toThrow(/sign in/i);
   });
 });
+
+describe('rate limits', () => {
+  it('refuses a caller over the limit and recovers after the window', () => {
+    const request = { user: { id: 'rateUser01' } };
+    const [max, windowMs] = internals.RATE_LIMITS.getPrices;
+    for (let i = 0; i < max; i += 1) internals.checkRateLimit('getPrices', request, 1000 + i);
+    expect(() => internals.checkRateLimit('getPrices', request, 1000 + max)).toThrow(/Too many requests/);
+    // Other users and other functions are counted separately.
+    expect(() => internals.checkRateLimit('getPrices', { user: { id: 'rateUser02' } }, 1000 + max)).not.toThrow();
+    expect(() => internals.checkRateLimit('getStatistics', request, 1000 + max)).not.toThrow();
+    expect(() => internals.checkRateLimit('getPrices', request, 1000 + windowMs + max)).not.toThrow();
+  });
+
+  it('wraps every Cloud function', async () => {
+    const request = { user: { id: 'rateUser03' }, params: { merchant: 'x' } };
+    const [max] = internals.RATE_LIMITS.rebuildSummaries;
+    for (let i = 0; i < max; i += 1) internals.checkRateLimit('rebuildSummaries', request, Date.now());
+    await expect(functions.rebuildSummaries!(request)).rejects.toThrow(/Too many requests/);
+    expect(Object.keys(functions).every((name) => name in internals.RATE_LIMITS)).toBe(true);
+  });
+});

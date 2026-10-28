@@ -10,6 +10,7 @@ import { AppText } from '@/components/ui/text';
 import { TextField } from '@/components/ui/text-field';
 import { removeNote, saveNote, toggleNote, useNotes } from '@/data/repos/notes';
 import { confirm } from '@/lib/confirm';
+import { haptics } from '@/lib/haptics';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
 
@@ -49,7 +50,10 @@ export default function NotesScreen() {
             accessibilityState={{ checked: note.done }}
             accessibilityLabel={note.body}
             hitSlop={10}
-            onPress={() => void toggleNote(note)}
+            onPress={() => {
+              haptics.select();
+              void toggleNote(note);
+            }}
             style={[styles.box, { borderColor: note.done ? colors.primary : colors.border, backgroundColor: note.done ? colors.primary : 'transparent' }]}>
             {note.done ? <Icon name="check" size={16} color={colors.background} /> : null}
           </Pressable>
