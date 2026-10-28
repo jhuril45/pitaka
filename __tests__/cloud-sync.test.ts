@@ -71,18 +71,34 @@ describe('applyRecord / toRecord', () => {
     expect(() => internals.applyRecord('Transaction', object, { ...txRecord, [field]: value })).toThrow(message);
   });
 
-  it('refuses file references until uploads are supported', () => {
+  it('stores uploaded-file references and round-trips them', () => {
+    const object = new Parse.Object('Attachment');
+    const record = {
+      uuid: UUID,
+      profileUuid: PROFILE,
+      clientUpdatedAt: NOW,
+      deletedAt: null,
+      serverUpdatedAt: null,
+      transactionUuid: UUID,
+      file: { name: 'abc123_receipt.jpg', url: 'https://parsefiles.back4app.com/app/abc123_receipt.jpg' },
+      mime: 'image/jpeg',
+      ocrText: 'TOTAL 99.00',
+    };
+    internals.applyRecord('Attachment', object, record);
+    expect(object.get('file')).toBeInstanceOf(Parse.File);
+    expect(internals.toRecord('Attachment', object).file).toEqual(record.file);
+  });
+
+  it.each([
+    [{ name: '../etc/passwd', url: 'https://x/a' }],
+    [{ name: 'a.jpg', url: 'http://insecure/a.jpg' }],
+    [{ name: 'a.jpg' }],
+    ['a.jpg'],
+  ])('refuses a bad file reference %p', (file) => {
     const object = new Parse.Object('Attachment');
     expect(() =>
-      internals.applyRecord('Attachment', object, {
-        uuid: UUID,
-        profileUuid: PROFILE,
-        clientUpdatedAt: NOW,
-        transactionUuid: UUID,
-        file: { name: 'x.jpg', url: 'https://x/x.jpg' },
-        mime: 'image/jpeg',
-      }),
-    ).toThrow(/uploads are not supported yet/);
+      internals.applyRecord('Attachment', object, { uuid: UUID, profileUuid: PROFILE, clientUpdatedAt: NOW, transactionUuid: UUID, file, mime: 'image/jpeg' }),
+    ).toThrow(/uploaded file reference/);
   });
 });
 

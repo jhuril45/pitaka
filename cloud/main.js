@@ -766,8 +766,20 @@ function applyRecord(className, object, record) {
         if (!Array.isArray(value)) throw bad();
         break;
       case 'File':
-        // Receipt uploads arrive in a later version; until then only "no file" is accepted.
-        throw invalid(className + '.' + name + ' uploads are not supported yet.');
+        // A reference to a file the app already uploaded (beforeSaveFile checked
+        // type, size and that a user uploaded it). Only the name/url pair is
+        // accepted; Parse stores the reference, never file bytes, here.
+        if (
+          !isPlainObject(value) ||
+          typeof value.name !== 'string' ||
+          !/^[\w.-]{1,200}$/.test(value.name) ||
+          typeof value.url !== 'string' ||
+          !/^https:\/\//.test(value.url)
+        ) {
+          throw invalid(className + '.' + name + ' must be an uploaded file reference.');
+        }
+        value = Parse.File.fromJSON({ __type: 'File', name: value.name, url: value.url });
+        break;
       default:
         throw bad();
     }

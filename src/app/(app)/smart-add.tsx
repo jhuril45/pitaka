@@ -1,6 +1,6 @@
 import { format, isToday } from 'date-fns';
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MoneyText } from '@/components/money-text';
@@ -14,6 +14,7 @@ import { learnMerchantCategory, listMerchantMappings } from '@/data/repos/mercha
 import { saveTransaction } from '@/data/repos/transactions';
 import { useLocalQuery } from '@/data/use-local-query';
 import { useSmartParse } from '@/features/smart-entry/use-smart-parse';
+import { useVoiceInput } from '@/features/voice/use-voice-input';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
@@ -32,8 +33,21 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function SmartAddScreen() {
   const profileUuid = useCurrentProfileUuid();
   const { colors, radius, spacing } = useTheme();
+  const { voice: startWithVoice } = useLocalSearchParams<{ voice?: string }>();
   const [text, setText] = useState('');
   const [reviewing, setReviewing] = useState(false);
+  const [usedVoice, setUsedVoice] = useState(false);
+  const voice = useVoiceInput((heard) => {
+    setText(heard);
+    setReviewing(false);
+    setUsedVoice(true);
+  });
+  const { start: startVoice } = voice;
+
+  // Quick Add → Voice opens this screen already listening.
+  useEffect(() => {
+    if (startWithVoice === '1') void startVoice();
+  }, [startWithVoice, startVoice]);
   const { data: accounts } = useAccounts(profileUuid);
   const { data: categories } = useCategories(profileUuid);
   const { data: mappings } = useLocalQuery(() => listMerchantMappings(profileUuid), ['MerchantMapping'], [profileUuid]);
@@ -48,7 +62,7 @@ export default function SmartAddScreen() {
     await saveTransaction({
       ...values,
       profileUuid,
-      source: 'manual',
+      source: usedVoice ? 'voice' : 'manual',
       recurringRuleUuid: null,
       installmentUuid: null,
     });
@@ -70,11 +84,21 @@ export default function SmartAddScreen() {
             setReviewing(false);
           }}
           placeholder="e.g. Grab 180 yesterday gcash"
-          autoFocus
+          autoFocus={startWithVoice !== '1'}
           autoCorrect={false}
           returnKeyType="done"
           onSubmitEditing={() => ready && setReviewing(true)}
         />
+        <Button
+          title={voice.listening ? 'Listening… tap to stop' : 'Say it instead'}
+          variant={voice.listening ? 'primary' : 'outline'}
+          onPress={() => (voice.listening ? voice.stop() : void voice.start())}
+        />
+        {voice.message ? (
+          <AppText variant="caption" tone={voice.state === 'idle' ? 'muted' : 'danger'}>
+            {voice.message}
+          </AppText>
+        ) : null}
 
         {!text ? (
           <View style={[styles.chips, { gap: spacing.sm }]}>

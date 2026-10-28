@@ -6,6 +6,7 @@ import { emitChange } from '@/data/events';
 import { getLocal, putManyLocal, dropLocal } from '@/data/local-store';
 import { windowStart } from '@/data/pins';
 import { saveSharedData } from '@/data/shared-cache';
+import { uploadPendingAttachments } from '@/features/attachments/attachments';
 import type { AnyRecord, LocalClassName } from '@/data/records';
 import { bootstrap, syncPull, syncPush, type PullResult } from '@/parse/cloud';
 import { Parse } from '@/parse/init';
@@ -224,6 +225,8 @@ export function syncNow(_reason = 'manual'): Promise<SyncOutcome> {
     }
     store.set({ status: 'syncing', error: null });
     try {
+      // Receipt photos first: their Attachment rows join this push.
+      await uploadPendingAttachments().catch(() => 0);
       await pushAll();
       await pullAll(userId);
       failures = 0;

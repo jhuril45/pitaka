@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Switch, View } from 'react-native';
 
 import { syncLabel } from '@/components/sync-indicator';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { ErrorBanner } from '@/components/ui/error-banner';
 import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
+import { getUploadOnCellular, setUploadOnCellular } from '@/features/attachments/attachments';
 import { useAuth } from '@/features/auth/auth-context';
 import { deleteAccount } from '@/parse/cloud';
 import { readParseConfig } from '@/parse/config';
@@ -94,8 +95,14 @@ function AccountCard() {
 }
 
 function SyncCard() {
-  const { spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const { status, pending, lastSyncedAt, error } = useSyncStore();
+  const [cellular, setCellular] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void getUploadOnCellular().then(setCellular);
+  }, []);
+
   return (
     <Card>
       <AppText variant="heading">Sync</AppText>
@@ -113,6 +120,24 @@ function SyncCard() {
           onPress={() => void syncNow('manual')}
         />
         <Button title="Sync issues" variant="ghost" onPress={() => router.push('/sync-issues')} />
+      </View>
+      <View style={[styles.switchRow, { gap: spacing.md, marginTop: spacing.xs }]}>
+        <View style={styles.flex}>
+          <AppText>Upload receipts on mobile data</AppText>
+          <AppText variant="caption" tone="muted">
+            Off: receipt photos wait for Wi-Fi.
+          </AppText>
+        </View>
+        <Switch
+          accessibilityLabel="Upload receipts on mobile data"
+          value={!!cellular}
+          disabled={cellular === null}
+          trackColor={{ true: colors.primary }}
+          onValueChange={(next) => {
+            setCellular(next);
+            void setUploadOnCellular(next);
+          }}
+        />
       </View>
     </Card>
   );
@@ -152,3 +177,8 @@ function DiagnosticsCard() {
     </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  switchRow: { flexDirection: 'row', alignItems: 'center' },
+});

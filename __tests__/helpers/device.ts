@@ -21,6 +21,7 @@ type Modules = {
   transactions: typeof import('@/data/repos/transactions');
   merchantMappings: typeof import('@/data/repos/merchant-mappings');
   sharedCache: typeof import('@/data/shared-cache');
+  attachments: typeof import('@/features/attachments/attachments');
 };
 
 export interface Device extends Modules {
@@ -58,6 +59,7 @@ export function createDevice(server: FakeServer, userId: string): Device {
 
   jest.isolateModules(() => {
     jest.doMock('expo-sqlite/kv-store', () => ({ __esModule: true, default: kvApi(kv) }));
+    jest.doMock('expo-image-manipulator', () => ({ ImageManipulator: {}, SaveFormat: { JPEG: 'jpeg' } }));
     jest.doMock('expo-crypto', () => ({
       randomUUID,
       CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
@@ -98,6 +100,7 @@ export function createDevice(server: FakeServer, userId: string): Device {
       transactions: require('@/data/repos/transactions'),
       merchantMappings: require('@/data/repos/merchant-mappings'),
       sharedCache: require('@/data/shared-cache'),
+      attachments: require('@/features/attachments/attachments'),
     });
   });
 

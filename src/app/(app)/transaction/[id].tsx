@@ -8,6 +8,7 @@ import { AppText } from '@/components/ui/text';
 import { useAccounts } from '@/data/repos/accounts';
 import { useCategories } from '@/data/repos/categories';
 import { getTransaction, removeTransaction, saveTransaction } from '@/data/repos/transactions';
+import { AttachmentStrip } from '@/features/attachments/attachment-strip';
 import { TransactionForm, type TransactionFormResult } from '@/features/transactions/transaction-form';
 import { confirm } from '@/lib/confirm';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
@@ -76,6 +77,7 @@ export default function TransactionScreen() {
             onDelete={existing ? onDelete : undefined}
           />
         )}
+        {existing ? <AttachmentStrip profileUuid={profileUuid} transactionUuid={existing.uuid} /> : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

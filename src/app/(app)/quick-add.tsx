@@ -21,8 +21,8 @@ const MODES: Mode[] = [
     onPress: () => router.replace('/transaction/new'),
   },
   { title: 'Smart text', description: 'Type “Starbucks 250” or “Salary 30k”.', onPress: () => router.replace('/smart-add') },
-  { title: 'Voice', description: 'Say it instead of typing.', onPress: null, comingIn: 'Milestone 6' },
-  { title: 'Scan receipt', description: 'Read the total from a photo.', onPress: null, comingIn: 'Milestone 6' },
+  { title: 'Voice', description: 'Say it instead of typing.', onPress: () => router.replace({ pathname: '/smart-add', params: { voice: '1' } }) },
+  { title: 'Scan receipt', description: 'Read the total from a photo.', onPress: () => router.replace('/scan-receipt') },
 ];
 
 export default function QuickAddScreen() {

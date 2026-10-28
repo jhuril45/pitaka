@@ -42,7 +42,39 @@
           }
         }
       ],
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Pitaka uses the microphone so you can say a transaction instead of typing it.",
+          "speechRecognitionPermission": "Pitaka turns what you say into a transaction.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+          ]
+        }
+      ],
+      "expo-sharing",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pitaka reads receipt photos you choose so it can fill in the amount.",
+          "cameraPermission": "Pitaka uses the camera to scan receipts."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F766E"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Pitaka can use Face ID to unlock the app."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
