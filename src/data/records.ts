@@ -13,8 +13,8 @@ import { Parse } from '@/parse/init';
  * saved with the SDK (writes go through syncPush), so the id is never sent.
  */
 
-/** Classes stored locally: synced user data plus the server-owned per-user rows. */
-export type LocalClassName = UserDataClassName | 'MonthlySummary' | 'Insight';
+/** Classes stored locally: synced user data, server-owned per-user rows, and pinned prices. */
+export type LocalClassName = UserDataClassName | 'MonthlySummary' | 'Insight' | 'PriceSnapshot';
 
 export type AnyRecord = Record<string, unknown> & { uuid: string };
 
@@ -25,6 +25,7 @@ const SERVER_DATE_FIELDS: Record<'MonthlySummary' | 'Insight', readonly string[]
 
 export function dateFieldsOf(className: LocalClassName): readonly string[] {
   if (className === 'MonthlySummary' || className === 'Insight') return SERVER_DATE_FIELDS[className];
+  if (className === 'PriceSnapshot') return [];
   return [...COMMON_DATE_FIELDS, ...DATE_FIELDS[className]];
 }
 

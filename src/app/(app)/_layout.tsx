@@ -55,6 +55,8 @@ function SignedInStack({ profileUuid }: { profileUuid: string }) {
         <Stack.Screen name="installments/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Installment' }} />
         <Stack.Screen name="recurring/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Recurring' }} />
         <Stack.Screen name="forecast" options={{ headerShown: true, title: 'Cashflow forecast' }} />
+        <Stack.Screen name="investments/index" options={{ headerShown: true, title: 'Investments' }} />
+        <Stack.Screen name="holdings/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Holding' }} />
         <Stack.Screen name="statistics" options={{ headerShown: true, title: 'Statistics' }} />
         <Stack.Screen name="sync-issues" options={{ headerShown: true, title: 'Sync issues' }} />
       </Stack>

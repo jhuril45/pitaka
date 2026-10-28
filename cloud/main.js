@@ -23,6 +23,11 @@
  *                   week's Insight rows (stable ids; safe to re-run).
  *   6. rebuildAllSummaries (once, optional): recompute every MonthlySummary,
  *                   e.g. for transactions synced before summaries existed.
+ *   7. refreshPrices: schedule it (e.g. hourly). Fetches prices for held
+ *                   symbols into PriceSnapshot. Crypto (CoinGecko) and PSE
+ *                   stocks (Phisix) need no key; US stocks need the env var
+ *                   FINNHUB_API_KEY (else the app uses manual prices).
+ *                   Optional: COINGECKO_API_KEY.
  *
  * Security model
  *   - User-data classes: clients may only READ their own rows (pointer
@@ -893,7 +898,12 @@ async function syncPush(request) {
       const object = current || new Parse.Object(className);
       if (!current) object.set('owner', user);
       // A transaction's old month needs its summary refreshed too.
-      const oldKey = className === 'Transaction' && current ? summaryKeyOf(current.get('profileUuid'), current.get('occurredAt')) : null;
+      const oldKey =
+        className === 'Transaction' && current
+          ? summaryKeyOf(current.get('profileUuid'), current.get('occurredAt'))
+          : className === 'Holding' && current
+            ? holdingKey(current.get('assetClass'), current.get('symbol'))
+            : null;
       try {
         applyRecord(className, object, entry.record);
         pending.push({ className: className, uuid: uuid, object: object, oldKey: oldKey });
@@ -951,6 +961,20 @@ async function syncPush(request) {
     if (key) summaryKeys[key] = true;
   });
   await refreshSummaryKeys(user, summaryKeys);
+
+  // Keep TrackedSymbol.refCount in step with the holdings just saved.
+  const symbolKeys = {};
+  pending.forEach(function (p) {
+    if (!p.saved || p.className !== 'Holding') return;
+    if (p.oldKey) symbolKeys[p.oldKey] = true;
+    const key = holdingKey(p.object.get('assetClass'), p.object.get('symbol'));
+    if (key) symbolKeys[key] = true;
+  });
+  try {
+    await recountTrackedSymbols(symbolKeys);
+  } catch (e) {
+    console.error('recountTrackedSymbols failed: ' + (e && e.message));
+  }
 
   return { accepted: accepted, conflicts: conflicts, rejected: rejected, serverTime: new Date().toISOString() };
 }
@@ -2014,6 +2038,233 @@ Parse.Cloud.define('rebuildSummaries', rebuildSummaries);
 Parse.Cloud.define('getStatistics', getStatistics);
 Parse.Cloud.define('markInsightRead', markInsightRead);
 Parse.Cloud.job('generateInsights', generateInsights);
+// ================================================================ investments (prices)
+
+const ASSET_CLASSES = ['us_stock', 'ph_stock', 'crypto'];
+const SYMBOL_PATTERN = /^[A-Z0-9.\-]{1,20}$/;
+/** On-demand fetches in getPrices wait at least this long per symbol. */
+const ON_DEMAND_GAP_MS = 15 * 60 * 1000;
+const MAX_ON_DEMAND = 5;
+const MAX_PRICE_SYMBOLS = 100;
+
+/**
+ * A provider's decimal price (number or string) → integer minor units
+ * (2 decimals, half up), parsed from its digits, never with float maths.
+ */
+function decimalToMinor(value) {
+  let text = typeof value === 'number' ? value.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 8 }) : String(value).trim();
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(text);
+  if (!match) return null;
+  const whole = Number(match[1]);
+  const frac = (match[2] || '').padEnd(3, '0');
+  let minor = whole * 100 + Number(frac.slice(0, 2));
+  if (Number(frac.charAt(2)) >= 5) minor += 1;
+  return Number.isSafeInteger(minor) ? minor : null;
+}
+
+/** Common crypto tickers → CoinGecko ids; others are looked up with /search. */
+const COINGECKO_IDS = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  USDT: 'tether',
+  USDC: 'usd-coin',
+  BNB: 'binancecoin',
+  SOL: 'solana',
+  XRP: 'ripple',
+  ADA: 'cardano',
+  DOGE: 'dogecoin',
+  TRX: 'tron',
+  DOT: 'polkadot',
+  POL: 'polygon-ecosystem-token',
+  MATIC: 'matic-network',
+  LTC: 'litecoin',
+  AVAX: 'avalanche-2',
+  LINK: 'chainlink',
+  SHIB: 'shiba-inu',
+  TON: 'the-open-network',
+};
+
+async function getJson(url, headers) {
+  const response = await Parse.Cloud.httpRequest({ url: url, headers: Object.assign({ Accept: 'application/json' }, headers || {}) });
+  return response.data !== undefined ? response.data : JSON.parse(response.text);
+}
+
+/**
+ * Price providers by asset class. Each returns { priceMinor, currency } or
+ * null. Swap or add providers here; keys come from Back4App env variables.
+ */
+const PRICE_PROVIDERS = {
+  crypto: async function (symbol) {
+    const headers = process.env.COINGECKO_API_KEY ? { 'x-cg-demo-api-key': process.env.COINGECKO_API_KEY } : {};
+    let id = COINGECKO_IDS[symbol];
+    if (!id) {
+      const found = await getJson('https://api.coingecko.com/api/v3/search?query=' + encodeURIComponent(symbol), headers);
+      const coin = ((found && found.coins) || []).find(function (c) {
+        return String(c.symbol).toUpperCase() === symbol;
+      });
+      if (!coin) return null;
+      id = coin.id;
+    }
+    const data = await getJson('https://api.coingecko.com/api/v3/simple/price?vs_currencies=php&ids=' + encodeURIComponent(id), headers);
+    const price = data && data[id] && data[id].php;
+    const priceMinor = price === undefined ? null : decimalToMinor(price);
+    return priceMinor === null ? null : { priceMinor: priceMinor, currency: 'PHP' };
+  },
+  ph_stock: async function (symbol) {
+    const data = await getJson('https://phisix-api3.appspot.com/stocks/' + encodeURIComponent(symbol) + '.json');
+    const stock = data && data.stock && data.stock[0];
+    const priceMinor = stock && stock.price ? decimalToMinor(stock.price.amount) : null;
+    return priceMinor === null ? null : { priceMinor: priceMinor, currency: (stock.price.currency || 'PHP').toUpperCase() };
+  },
+  us_stock: async function (symbol) {
+    if (!process.env.FINNHUB_API_KEY) return null; // Manual prices until a key is set.
+    const data = await getJson('https://finnhub.io/api/v1/quote?symbol=' + encodeURIComponent(symbol) + '&token=' + encodeURIComponent(process.env.FINNHUB_API_KEY));
+    const priceMinor = data && data.c ? decimalToMinor(data.c) : null;
+    return priceMinor ? { priceMinor: priceMinor, currency: 'USD' } : null;
+  },
+};
+
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Fetch one symbol's price and store today's PriceSnapshot. Returns the snapshot record or null. */
+async function fetchAndStorePrice(tracked) {
+  const symbol = tracked.get('symbol');
+  const assetClass = tracked.get('assetClass');
+  tracked.set('lastFetchedAt', new Date());
+  let quote = null;
+  try {
+    const provider = PRICE_PROVIDERS[assetClass];
+    quote = provider ? await provider(symbol) : null;
+  } catch (e) {
+    console.error('price fetch failed for ' + assetClass + ':' + symbol + ': ' + (e && e.message));
+  }
+  await tracked.save(null, MASTER);
+  if (!quote) return null;
+  const capturedOn = todayUtc();
+  const query = new Parse.Query('PriceSnapshot');
+  query.equalTo('symbol', symbol);
+  query.equalTo('assetClass', assetClass);
+  query.equalTo('capturedOn', capturedOn);
+  const row = (await query.first(MASTER)) || new Parse.Object('PriceSnapshot');
+  row.set({ symbol: symbol, assetClass: assetClass, priceMinor: quote.priceMinor, currency: quote.currency, capturedOn: capturedOn });
+  await row.save(null, MASTER);
+  return { symbol: symbol, assetClass: assetClass, priceMinor: quote.priceMinor, currency: quote.currency, capturedOn: capturedOn };
+}
+
+/** Set TrackedSymbol.refCount for the given "assetClass|SYMBOL" keys from live holdings with a quantity. */
+async function recountTrackedSymbols(keys) {
+  const list = Object.keys(keys);
+  for (let i = 0; i < list.length; i += 1) {
+    const parts = list[i].split('|');
+    const holdings = new Parse.Query('Holding');
+    holdings.equalTo('assetClass', parts[0]);
+    holdings.equalTo('symbol', parts[1]);
+    holdings.equalTo('deletedAt', null);
+    holdings.notContainedIn('quantity', ['0', '0.0']);
+    const count = await holdings.count(MASTER);
+    const query = new Parse.Query('TrackedSymbol');
+    query.equalTo('assetClass', parts[0]);
+    query.equalTo('symbol', parts[1]);
+    let row = await query.first(MASTER);
+    if (!row && count === 0) continue;
+    if (!row) {
+      row = new Parse.Object('TrackedSymbol');
+      row.set({ assetClass: parts[0], symbol: parts[1], lastFetchedAt: null });
+    }
+    if (row.get('refCount') === count && row.id) continue;
+    row.set('refCount', count);
+    await row.save(null, MASTER);
+  }
+}
+
+function holdingKey(assetClass, symbol) {
+  return ASSET_CLASSES.indexOf(assetClass) >= 0 && typeof symbol === 'string' && SYMBOL_PATTERN.test(symbol) ? assetClass + '|' + symbol : null;
+}
+
+/**
+ * refreshPrices (job, e.g. hourly on weekdays or daily): recount which symbols
+ * anyone holds, then fetch a price for each held one.
+ */
+async function refreshPrices(request) {
+  const keys = {};
+  (await findAll('Holding', function (q) {
+    q.select('assetClass', 'symbol');
+  })).forEach(function (h) {
+    const key = holdingKey(h.get('assetClass'), h.get('symbol'));
+    if (key) keys[key] = true;
+  });
+  (await findAllRows('TrackedSymbol', function () {})).forEach(function (t) {
+    const key = holdingKey(t.get('assetClass'), t.get('symbol'));
+    if (key) keys[key] = true;
+  });
+  await recountTrackedSymbols(keys);
+  const tracked = await findAllRows('TrackedSymbol', function (q) {
+    q.greaterThan('refCount', 0);
+  });
+  let fetched = 0;
+  for (let i = 0; i < tracked.length; i += 1) {
+    if (await fetchAndStorePrice(tracked[i])) fetched += 1;
+  }
+  const summary = 'refreshPrices done: ' + tracked.length + ' symbols held, ' + fetched + ' prices stored';
+  if (request.message) request.message(summary);
+  return summary;
+}
+
+/**
+ * getPrices({ symbols: [{ symbol, assetClass }] }) → { prices: [snapshot…] }
+ * The latest PriceSnapshot per symbol. A held symbol with no snapshot yet is
+ * fetched now (at most 5 per call, once per 15 minutes per symbol).
+ */
+async function getPrices(request) {
+  requireUser(request);
+  const symbols = request.params && request.params.symbols;
+  if (!Array.isArray(symbols) || symbols.length > MAX_PRICE_SYMBOLS) throw invalid('symbols must be an array of at most ' + MAX_PRICE_SYMBOLS + '.');
+  const wanted = {};
+  symbols.forEach(function (s) {
+    const key = s && holdingKey(s.assetClass, s.symbol);
+    if (!key) throw invalid('Each symbol needs a valid symbol and assetClass.');
+    wanted[key] = true;
+  });
+  const prices = [];
+  let onDemand = 0;
+  const list = Object.keys(wanted);
+  for (let i = 0; i < list.length; i += 1) {
+    const parts = list[i].split('|');
+    const query = new Parse.Query('PriceSnapshot');
+    query.equalTo('assetClass', parts[0]);
+    query.equalTo('symbol', parts[1]);
+    query.descending('capturedOn');
+    const latest = await query.first(MASTER);
+    if (latest) {
+      prices.push({
+        symbol: parts[1],
+        assetClass: parts[0],
+        priceMinor: latest.get('priceMinor'),
+        currency: latest.get('currency'),
+        capturedOn: latest.get('capturedOn'),
+      });
+      continue;
+    }
+    if (onDemand >= MAX_ON_DEMAND) continue;
+    const trackedQuery = new Parse.Query('TrackedSymbol');
+    trackedQuery.equalTo('assetClass', parts[0]);
+    trackedQuery.equalTo('symbol', parts[1]);
+    trackedQuery.greaterThan('refCount', 0);
+    const tracked = await trackedQuery.first(MASTER);
+    const last = tracked && tracked.get('lastFetchedAt');
+    if (!tracked || (last instanceof Date && Date.now() - last.getTime() < ON_DEMAND_GAP_MS)) continue;
+    onDemand += 1;
+    const fresh = await fetchAndStorePrice(tracked);
+    if (fresh) prices.push(fresh);
+  }
+  return { prices: prices };
+}
+
+Parse.Cloud.define('getPrices', getPrices);
+Parse.Cloud.job('refreshPrices', refreshPrices);
+
 Parse.Cloud.job('rebuildAllSummaries', async function (request) {
   const txs = await findAll('Transaction', function (q) {
     q.select('owner', 'profileUuid', 'occurredAt');
@@ -2063,5 +2314,7 @@ if (typeof module !== 'undefined' && module.exports) {
     seededUuid: seededUuid,
     monthRange: monthRange,
     computeInsights: computeInsights,
+    decimalToMinor: decimalToMinor,
+    PRICE_PROVIDERS: PRICE_PROVIDERS,
   };
 }

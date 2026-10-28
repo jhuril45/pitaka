@@ -12,6 +12,7 @@ import { ListRow } from '@/components/ui/list-row';
 import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { useCategories } from '@/data/repos/categories';
+import { usePortfolio } from '@/data/repos/holdings';
 import { dismissInsight, useUnreadInsights } from '@/data/repos/insights';
 import { useObligations } from '@/data/repos/obligations';
 import { useBudgets } from '@/data/repos/plans';
@@ -24,6 +25,8 @@ import { dueSoon } from '@/features/reminders/upcoming';
 import { TransactionRow } from '@/features/transactions/transaction-row';
 import { budgetStatus } from '@/lib/budgets';
 import { netWorth, periodTotals } from '@/lib/balances';
+import { add } from '@/lib/money';
+import { portfolioTotals, valueHolding } from '@/lib/portfolio';
 import { usePrivacyStore } from '@/stores/privacy-store';
 import { useCurrentProfileUuid } from '@/stores/profile-store';
 import { useTheme } from '@/theme';
@@ -47,6 +50,15 @@ export default function HomeScreen() {
     [transactions, month],
   );
   const worth = accounts && balances ? netWorth(accounts, balances, baseCurrency) : null;
+  const { data: portfolio } = usePortfolio(profileUuid);
+  // Holdings in the base currency count toward net worth.
+  const investedMinor = useMemo(
+    () =>
+      portfolio
+        ? (portfolioTotals(portfolio.holdings.map((h) => valueHolding(h, portfolio.prices))).find((t) => t.currency === baseCurrency)?.valueMinor ?? 0)
+        : 0,
+    [portfolio, baseCurrency],
+  );
   const { data: budgets } = useBudgets(profileUuid);
   // The two budgets closest to their limit.
   const topBudgets = useMemo(
@@ -85,7 +97,12 @@ export default function HomeScreen() {
             <Icon name={hideAmounts ? 'eyeOff' : 'eye'} size={20} color={colors.textMuted} />
           </Pressable>
         </View>
-        <MoneyText amountMinor={worth?.totalMinor ?? 0} currency={baseCurrency} variant="display" />
+        <MoneyText amountMinor={add(worth?.totalMinor ?? 0, investedMinor)} currency={baseCurrency} variant="display" />
+        {investedMinor ? (
+          <AppText variant="caption" tone="muted">
+            incl. <MoneyText amountMinor={investedMinor} currency={baseCurrency} variant="caption" tone="muted" /> in investments
+          </AppText>
+        ) : null}
         {worth?.other.map((o) => (
           <AppText key={o.currency} variant="caption" tone="muted">
             + <MoneyText amountMinor={o.totalMinor} currency={o.currency} variant="caption" tone="muted" /> in {o.currency} accounts

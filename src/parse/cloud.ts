@@ -106,3 +106,16 @@ export function markInsightRead(uuid: string): Promise<{ ok: boolean }> {
 export function rebuildSummaries(profileUuid?: string): Promise<{ months: number; rows: number }> {
   return Parse.Cloud.run('rebuildSummaries', profileUuid ? { profileUuid } : {});
 }
+
+export interface PriceSnapshot {
+  symbol: string;
+  assetClass: 'us_stock' | 'ph_stock' | 'crypto';
+  priceMinor: number;
+  currency: string;
+  capturedOn: string;
+}
+
+/** Latest stored price per symbol (fetched on demand for newly held symbols). */
+export function getPrices(symbols: { symbol: string; assetClass: PriceSnapshot['assetClass'] }[]): Promise<{ prices: PriceSnapshot[] }> {
+  return Parse.Cloud.run('getPrices', { symbols });
+}

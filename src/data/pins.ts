@@ -12,12 +12,15 @@ import type { AnyRecord, LocalClassName } from './records';
  *   tx:<profileUuid>:<YYYY-MM>  transactions of one month
  *   summary:<profileUuid>       MonthlySummary rows
  *   insights:<profileUuid>      Insight rows
+ *   prices                      latest PriceSnapshot per held symbol
  */
 
 export const PIN_PROFILES = 'profiles';
 export const PIN_ACCOUNT = 'account';
 export const PIN_OUTBOX = 'outbox';
 export const PIN_SYNC_ISSUES = 'sync-issues';
+/** Latest price per held symbol (from getPrices), shared by all profiles. */
+export const PIN_PRICES = 'prices';
 
 /** Transactions older than this many months are left on the server (fetched on demand). */
 export const DEFAULT_TX_WINDOW_MONTHS = 12;
@@ -57,6 +60,8 @@ export function pinFor(className: LocalClassName, record: AnyRecord): string {
       return summaryPin(String(profileUuid));
     case 'Insight':
       return insightsPin(String(profileUuid));
+    case 'PriceSnapshot':
+      return PIN_PRICES;
     default:
       return profileUuid ? profilePin(profileUuid) : PIN_ACCOUNT;
   }

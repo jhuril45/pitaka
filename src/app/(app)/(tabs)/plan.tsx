@@ -44,6 +44,7 @@ export default function PlanScreen() {
     <Screen title="Plan">
       <Card>
         <ListRow title="Cashflow forecast" subtitle="Your balance for the next 30–90 days · Can I afford it?" onPress={() => router.push('/forecast')} />
+        <ListRow title="Investments" subtitle="Stocks and crypto: value, profit or loss" onPress={() => router.push('/investments')} />
       </Card>
       <View style={styles.between}>
         <AppText variant="heading">Budgets</AppText>

@@ -491,11 +491,28 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
 - Tested: `cloud-summaries.test.ts`, `statistics.test.ts`; Statistics and the feedback toast
   checked on the emulator.
 
+## Milestone 11: Investments ✅ (prices need the redeploy)
+
+- **Holdings** (Plan → Investments): PH stocks, US stocks, crypto; quantity as an exact decimal
+  string (up to 12 decimals, BigInt maths in `src/lib/quantity.ts`), average cost, optional price
+  of your own. Value, cost, profit/loss and allocation per currency (`src/lib/portfolio.ts`); no
+  FX conversion. Base-currency holdings count in Home's net worth.
+- **Prices only from `PriceSnapshot`**: `getPrices` returns the latest snapshot per symbol (and
+  fetches a newly held one on demand, ≤ 5 per call, once per 15 min); the phone pins them in a
+  `prices` pin so values work offline. Without a market price, the manual price is used.
+- **Server**: `TrackedSymbol.refCount` is recounted after each push that touches holdings and by
+  `refreshPrices` (job). Providers are pluggable (`PRICE_PROVIDERS`): CoinGecko for crypto in PHP,
+  Phisix for PSE stocks, Finnhub for US stocks (needs `FINNHUB_API_KEY`). Provider prices are
+  parsed into centavos from their digits, never with float maths.
+- Tested: `portfolio.test.ts`, `cloud-prices.test.ts`; holdings, P/L and net worth checked on the
+  emulator (the live price lookup waits on the redeploy).
+
 ---
 
 ## Where we stopped
 1. **Redeploy `cloud/main.js`** (Cloud Code → Deploy), then run **setupSchema** once (adds
    `ReminderLog`). Schedule **processRecurring** daily at 01:00 UTC and **generateInsights**
-   weekly (Mondays 00:30 UTC); run **rebuildAllSummaries** once. After the redeploy, use
+   weekly (Mondays 00:30 UTC) and **refreshPrices** hourly; run **rebuildAllSummaries** once.
+   Optional env vars: `FINNHUB_API_KEY` (US stock prices), `COINGECKO_API_KEY`, `EXPO_ACCESS_TOKEN`. After the redeploy, use
    More → Sync issues → Retry for any refused receipt photo.
 2. Run `npm run test:integration` against the dev app.
