@@ -47,3 +47,6 @@ coverage/
 
 # personal Claude Code settings
 .claude/settings.local.json
+
+# Vercel CLI project link
+.vercel
