@@ -1,0 +1,8 @@
+# Vercel builds only the web app (npx expo export -p web); skip native and local build output.
+android
+ios
+dist
+.expo
+coverage
+*.apk
+*.aab
