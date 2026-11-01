@@ -6,6 +6,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Logo } from '@/components/logo';
 import { AppText } from '@/components/ui/text';
 import { AuthProvider, useAuth } from '@/features/auth/auth-context';
+// Web: catches the browser's install event early (for the "Install Pitaka" button).
+import '@/features/install/install-prompt';
 import { initParse } from '@/parse/init';
 // Defines the OS background-sync task; must load before the app registers it.
 import '@/sync/background';

@@ -23,7 +23,12 @@
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Pitaka",
+      "shortName": "Pitaka",
+      "themeColor": "#0F766E",
+      "backgroundColor": "#F8FAFC",
+      "display": "standalone"
     },
     "plugins": [
       "expo-router",

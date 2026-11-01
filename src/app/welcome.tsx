@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
+import { InstallBanner } from '@/features/install/install-banner';
 import { useTheme } from '@/theme';
 
 /**
@@ -45,6 +46,7 @@ export default function WelcomeScreen() {
       </View>
 
       <Animated.View style={[{ gap: spacing.md, paddingBottom: spacing.xl }, rise(actions)]}>
+        <InstallBanner />
         <Link href="/sign-in" asChild>
           <Button title="Login" variant="outline" />
         </Link>

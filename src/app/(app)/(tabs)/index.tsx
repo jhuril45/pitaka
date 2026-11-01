@@ -22,6 +22,7 @@ import { useAccountBalances } from '@/data/repos/use-balances';
 import { useLocalQuery } from '@/data/use-local-query';
 import { useAuth } from '@/features/auth/auth-context';
 import { BudgetCard } from '@/features/plans/budget-card';
+import { InstallBanner } from '@/features/install/install-banner';
 import { dueSoon } from '@/features/reminders/upcoming';
 import { TransactionRow } from '@/features/transactions/transaction-row';
 import { budgetStatus } from '@/lib/budgets';
@@ -93,6 +94,7 @@ export default function HomeScreen() {
         </Pressable>
       ) : null}
       <SyncIndicator />
+      <InstallBanner />
 
       <Card>
         <View style={styles.between}>

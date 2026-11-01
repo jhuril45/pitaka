@@ -11,6 +11,7 @@ import { Screen } from '@/components/ui/screen';
 import { AppText } from '@/components/ui/text';
 import { getUploadOnCellular, setUploadOnCellular } from '@/features/attachments/attachments';
 import { useAuth } from '@/features/auth/auth-context';
+import { InstallBanner } from '@/features/install/install-banner';
 import { clearLock } from '@/features/lock/lock-settings';
 import { SHARE_MERCHANT_DATA, setAccountSetting, useAccountSetting } from '@/data/repos/settings';
 import { deleteAccount } from '@/parse/cloud';
@@ -25,6 +26,7 @@ export default function MoreScreen() {
   return (
     <Screen title="More">
       <AccountCard />
+      <InstallBanner dismissible={false} />
       <Card>
         <AppText variant="heading">Money</AppText>
         <ListRow title="Accounts" subtitle="Banks, e-wallets, cash and cards" onPress={() => router.push('/accounts')} />

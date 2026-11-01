@@ -1,6 +1,6 @@
 """
 Generate Pitaka's app icon, Android adaptive icon layers, splash image and favicon
-from one drawing: a teal rounded tile with an amber top band and a white peso sign
+and the web app's install icons from one drawing: a teal rounded tile with an amber top band and a white peso sign
 (the same mark as src/components/logo.tsx).
 
     python scripts/generate-icons.py
@@ -13,7 +13,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parent.parent / "assets" / "images"
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "assets" / "images"
+# Web app (PWA) icons, served as-is from public/.
+WEB = ROOT / "public" / "icons"
 
 TEAL = (15, 118, 110, 255)  # theme primary #0F766E
 AMBER = (245, 158, 11, 255)  # theme accent  #F59E0B
@@ -95,6 +98,13 @@ def adaptive_glyph(size: int, color) -> Image.Image:
     return layer.resize((size, size), Image.LANCZOS)
 
 
+def maskable(size: int) -> Image.Image:
+    """Full-bleed web icon for maskable use: the adaptive layers, glyph inside the 80% safe zone."""
+    img = adaptive_background(size)
+    img.alpha_composite(adaptive_glyph(size, WHITE))
+    return img
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     # iOS / generic icon: full bleed, the OS applies its own rounded mask.
@@ -107,7 +117,15 @@ def main() -> None:
     tile(512, rounded=True).save(OUT / "splash-icon.png")
     tile(48, rounded=True).save(OUT / "favicon.png")
     tile(256, rounded=True).save(OUT / "logo.png")
-    print("Icons written to", OUT)
+    # Web app install icons (manifest.json) and the iOS home-screen icon.
+    WEB.mkdir(parents=True, exist_ok=True)
+    tile(192, rounded=True).save(WEB / "icon-192.png")
+    tile(512, rounded=True).save(WEB / "icon-512.png")
+    maskable(192).save(WEB / "maskable-192.png")
+    maskable(512).save(WEB / "maskable-512.png")
+    # iOS adds its own rounded corners and needs an opaque image.
+    tile(180, rounded=False).convert("RGB").save(WEB / "apple-touch-icon.png")
+    print("Icons written to", OUT, "and", WEB)
 
 
 if __name__ == "__main__":
