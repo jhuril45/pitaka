@@ -562,6 +562,21 @@ Routes live in `src/app/` (the SDK 58 template convention) instead of a root `/a
   toasts, verdicts and PIN errors; locked content hidden from screen readers.
 - Empty states on every list; FlashList for transactions; icon/splash from the logo (earlier).
 
+## Web app (Vercel, installable)
+
+- Live at **https://pitaka-phi.vercel.app**. Every push to `main` deploys (Vercel project `pitaka`).
+  `npm run build:web` = `expo export` + `scripts/web-precache.js`.
+- **Installable (PWA):** `public/manifest.json`, icons in `public/icons/` (from
+  `scripts/generate-icons.py`), iOS home-screen tags in `public/index.html`. Opens full-screen
+  with no browser bar.
+  - Android / desktop Chrome & Edge: an **Install Pitaka** button (Welcome, Home, More) opens the
+    browser's install dialog.
+  - iPhone / iPad: the banner explains Share → **Add to Home Screen** (iOS has no install API).
+- **Offline:** `public/sw.js` saves the whole app (64 files, ~5 MB) at install; pages are network
+  first, so online users always get the latest deploy. Each build stamps a new version, so a
+  deploy replaces the old cache. Data offline is handled by the app's own local store, not the
+  service worker (Back4App requests are never cached).
+
 ---
 
 ## Where we stopped
